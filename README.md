@@ -1,6 +1,7 @@
 # Greek-AADE-myDATA-Client-for-Doctors
 
-SUITABLE ONLY FOR 
+SUITABLE ONLY FOR DOCTORs/PHYSICIANs that operate in Greece
+
 Simple Client to manage Invoices in the Greek Electronic Tax System (myDATA).
 
 https://www.aade.gr/mydata
