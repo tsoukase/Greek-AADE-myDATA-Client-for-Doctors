@@ -1,4 +1,4 @@
-# Greek-AADE-myDATA-Client-for-Doctors
+# Greek AADE-myDATA Client for Doctors
 
 ** SUITABLE ONLY FOR DOCTORs/PHYSICIANs that operate in Greece **
 
@@ -23,5 +23,7 @@ https://www.aade.gr/mydata
 1) edit/set variables in the file: 
 - DEVEL = 0 (testing) | 1 (production)
 - user and key (as registered in myDATA server)
+- Branches information (as registered in TAXIS)
 
 2) python3 myDATA.py
+
