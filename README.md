@@ -1,6 +1,7 @@
 # Greek AADE-myDATA Client for Doctors
 
 ** SUITABLE FOR DOCTORs/PHYSICIANs that operate in Greece **
+
 ** TODO: In Windows OS's it crashes due to Socket connection and encoding errors. HELP to fix is wellcome.
 
 ## Simple Client to manage Invoices in the Greek Electronic Tax System (myDATA).
@@ -25,4 +26,4 @@ https://www.aade.gr/mydata
 - 'USER' and 'KEY'(s) as registered in myDATA server
 - 'BRANCHES' dictionary: branch(es) number(s) as registered in TAXIS and their address
 
-2) python3 myDATA.py
+2) Run: `python3 myDATA.py`
