@@ -27,6 +27,11 @@ Hardcoded constants:
 4) Paymethods
 5) Local save file of invoices, delimiter
 
+In Windows:
+1) compatible Python version = 3.4.3
+2) the local file save must be present
+2) only Print offline works
+  
 """
 
 import os
@@ -41,7 +46,7 @@ import http.client, urllib.request, urllib.parse, urllib.error, base64
 # =====================================================
 
 # ===== ATTENTION
-testing = 1
+isTesting = 1
 # ===== ATTENTION
 
 # local file to save invoice
@@ -52,24 +57,12 @@ D = ';'
 # the MYDATA XML namespace
 NS = '{http://www.aade.gr/myDATA/invoice/v1.0}'
 
-# MYDATA credentials
-USER = 'XXX'
-KEY = 'YYY'
-
-isDevel = 1
-if isDevel:
-  BASE_URL = 'mydata-dev.azure-api.net'
-  BASE_EXT = ''
-else:
-  BASE_URL = 'mydatapi.aade.gr'
-  BASE_EXT = '/myDATA'
-
 # Υποκαταστήματα με κωδικό από TAXIS
 BRANCHES = {
-  'Θεσσαλονίκη': ['1',
-    'Βασ. Ολγας 1, Θεσσαλονίκη<br />τηλ 2310222222, 6977777777'],
-  'Αθήνα': ['3',
-    'Βασ. Σοφίας 1, Αθήνα<br />τηλ 2102222222, 6977777777'],
+  'Αθήνα': ['1',
+    'Διεύθυνση Αθήνας<br />τηλ 210000000, 6970000000'],
+  'Θεσσαλονίκη': ['2',
+    'Διεύθυνση Θεσσαλονίκης<br />τηλ 231000000, 6970000000']
   }
 
 # Missing: Διεθνές POS
@@ -77,6 +70,19 @@ PAYMETHODS = {
   'Μετρητά': '3',
   'POS': '1'
   }
+
+# MYDATA credentials
+USER = 'username'
+
+if isTesting:
+  KEY = 'devel_KEY'
+  BASE_URL = 'mydata-dev.azure-api.net'
+  BASE_EXT = ''
+
+else:
+  KEY = 'prod_KEY' 
+  BASE_URL = 'mydatapi.aade.gr'
+  BASE_EXT = '/myDATA'
 
 headers = {
   'aade-user-id': USER,
@@ -229,7 +235,7 @@ def setAA():
 # SEARCH methods
 # =====================================================
 
-# Search based on range and ...
+# Search based on given range and ...
 def populateFromLocalFile():
 
   setRange()
@@ -250,9 +256,10 @@ def populateFromLocalFile():
         if range_from <= l.split(D)[2] <= range_until:
           sel.append(l)
 
-    else:
+    else: # Name-Visit search
       for l in f:
-        if (range_from in l.split(D)[5]) or (range_until in l.split(D)[5]):
+        if ( (range_from in l.split(D)[5].split('-')[0])
+        and (range_until in l.split(D)[5].split('-')[1]) ):
            sel.append(l)
 
   # Canvas should be first destroyed (canvas.delete(...)
@@ -270,19 +277,21 @@ def setRange():
 
      if not range_until.isnumeric():
        entry_until.delete(0, 'end')
-       entry_until.insert(0, 1)
+       entry_until.insert(0, 2)
      if not range_from.isnumeric():
        entry_from.delete(0, 'end')
-       entry_from.insert(0, 2)
+       entry_from.insert(0, 1)
 
   elif searchtermOmVar.get()[0] == '2': # Date range
 
-    range_until = datetime.today().strftime('%Y-%m-%d')
-    entry_until.delete(0, 'end')
-    entry_until.insert(0, range_until)
-    range_from = range_until
-    entry_from.delete(0, 'end')
-    entry_from.insert(0, range_from)
+    if '-' not in range_until:
+      range_until = datetime.today().strftime('%Y-%m-%d')
+      entry_until.delete(0, 'end')
+      entry_until.insert(0, range_until)
+    if range_from == '':
+      range_from = range_until
+      entry_from.delete(0, 'end')
+      entry_from.insert(0, range_from)
 
 
 # Saves in local file the Invoices with MARK > mark (now: 0)
@@ -395,11 +404,12 @@ def setMark():
   entry_mark.insert(0, invoiceOmVar.get().split(D)[6].strip())
 
 
+
 # ====================
 # PRINT methods 
 # ====================
 
-# ... online = an already valid APY, retreived from local file
+# ... onl ine = an already valid APY, retreived from local file
 # ... offline = a virtual APY, retreived from GUI entries
 def PrintInvoice(mode):
 
@@ -599,7 +609,7 @@ def PrintInvoice(mode):
          )
 
   file_html = os.path.abspath('apy2print.html')
-  with open(file_html, 'w') as f:
+  with open(file_html, 'w', encoding='utf-8') as f:  # enc... fixes Windows charmap bug 
     f.write(apy_html)
     webbrowser.open('file://' + file_html)
 
@@ -757,16 +767,16 @@ button_Print_offline = tk.Button(text='Εκτύπωση Offline',
 canvas.create_window(800, H_BUTT, window=button_Print_offline)
 
 # Initialise entries
-#entry_mark.insert(0, 'ΜΑΡΚ')
 entry_amount.insert(0, '5.00')
 entry_comment1.insert(0, 'Αρρωστος')
 entry_comment2.insert(0, branchOmVar.get())
 entry_comment3.insert(0, 'Συνταγογράφηση')
 entry_date.insert(0, datetime.today().strftime('%Y-%m-%d'))
-if not os.path.isfile(INVOICE_FNAME):
-  RequestTransmittedDocs(0)
-populateFromLocalFile()
-setAA()
+if os.name != 'nt': # well ...
+  if not os.path.isfile(INVOICE_FNAME): # well... Windows
+    RequestTransmittedDocs(0)
+  populateFromLocalFile()
+  setAA()
 
 # BAM!!!
 root.mainloop()
