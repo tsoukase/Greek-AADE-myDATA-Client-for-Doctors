@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html>
+<!--
+
+ATTENTION: CHECK isTesting operation BEFORE USE!!
+
+=============================================
+Εφαρμογή για αποστολή ιατρικών ΑΠΥ στο MYDATA
+=============================================
+
+Υποστηρίζει:
+1) αποστολή ΑΠΥ
+2) κατέβασμα όλων των ΑΠΥ από MyDATA
+2) αναζήτηση με βάση ΑΑ, ημερoμηνία, όνομα/αιτία
+4) ακύρωση ΑΠΥ βάση ΜΑΡΚ
+5) εκτύπωση ΑΠΥ βάση ΜΑΡΚ ή βάση των entries (offline) 
+
+Invoice columns: Υποκ, ΑΑ, Ημ/νία, Ποσό, Πληρωμή, Σχόλιο, ΜΑΡΚ
+Comment = Patient Name - Address - Visit reason
+
+Hardcoded User info:
+1) isTesting operation, CHECK IT BEFORE USE!!
+2) Username and Keys
+3) Branches (όπως φαίνονται στο Taxis)
+4) Paymethods
+
+-->
+
+<head>
+  <meta charset="UTF-8">
+  <title>ΕΦΑΡΜΟΓΗ ΠΑΡΑΣΤΑΤΙΚΩΝ MYDATA ΓΙΑ ΓΙΑΤΡΟΥΣ</title>
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
+</head>
+
+<body>
+
+<big><label id='title' for="title"></label></big>
+
+<!-- SEND -->
+<p> ΑΠΟΣΤΟΛΗ ΑΠΥ </p>
+
+  <label for="aa">Εδρα:</label>
+  <select id="dd_branch" onchange="adjustForBranch()"></select><br><br>
+
+  <label for="aa">ΑΑ:</label>
+  <input type="text" id="aa" name="aa" value="10">
+
+  <label for="Date">Ημερομηνία:</label>
+  <input type="text" id="date" name="date" value=""><br><br>
+
+  <label for="Amount">Ποσό (Ε):</label>
+  <input type="text" id="amount" name="amount" value="5.00">
+
+  <select id="dd_paymethod"></select><br><br>
+
+  <label for="Name">Ον/μο:</label>
+  <input type="text" id="name" name="name" value="Αρρωστος"><br><br>
+  <label for="Address">Διεύθ:</label>
+  <input type="text" id="address" name="address" value="Αθηνα"><br><br>
+  <label for="reason">Αιτία:</label>
+  <input type="text" id="reason" name="reason" value="Συνταγογράφηση"><br><br>
+
+  <button onclick="SendInvoice()">ΑΠΟΣΤΟΛΗ</button><br><br>
+
+
+<!-- RETRIEVE AND SEARCH -->
+<p> ΑΝΑΖΗΤΗΣΗ ΑΠΥ </p>
+
+  <select id="dd_range"></select><br><br>
+  <input type="text" id="from" name="from" value="">
+  <input type="text" id="until" name="until" value=""><br><br>
+
+  <select onchange="setMark()" id="dd_invoice"></select><br><br>
+
+  <button onclick="SearchAndPopulate()">ΑΝΑΖΗΤΗΣΗ</button>
+
+  <button onclick="RequestTransmittedDocs()">Sync MyDATA</button><br><br>
+
+
+<!-- MANAGE -->
+<p> ΔΙΑΧΕΙΡΙΣΗ ΑΠΥ </p>
+
+  <label for="Mark">ΜΑΡΚ:</label>
+  <input type="text" id="mark" name="mark" value=""><br><br>
+
+  <button onclick="Cancel()">ΑΚΥΡΩΣΗ</button><br><br>
+
+  <button onclick="PrintInvoice('online')">ΕΚΤΥΠΩΣΗ</button><br><br>
+  <button onclick="PrintInvoice('offline')">ΕΚΤΥΠΩΣΗ offline</button><br><br>
+
+
+
+<script type="text/javascript">
+
+// GLOBALS ##############################
+
+var isTesting = 1;
+
+  var user = "username";
+
+if (isTesting == 1) {
+  var key = "key-dev";
+  var url = "https://mydata-dev.azure-api.net";
+  document.getElementById("title").innerHTML = "ΕΦΑΡΜΟΓΗ ΠΑΡΑΣΤΑΤΙΚΩΝ MYDATA ΓΙΑ ΓΙΑΤΡΟΥΣ - TESTING"
+}
+else {
+  var key = "key-prod";
+  var url = "https://mydatapi.aade.gr/myDATA";
+  document.getElementById("title").innerHTML = "ΕΦΑΡΜΟΓΗ ΠΑΡΑΣΤΑΤΙΚΩΝ MYDATA ΓΙΑ ΓΙΑΤΡΟΥΣ - PRODUCTION"
+}
+
+// Υποκαταστήματα με κωδικό από TAXIS
+BRANCHES = {
+  'Αθήνα': ['1', 'Διευθυνση, Αθήνα<br />τηλ 21000000'],
+  'Θεσσαλονίκη': ['2', 'Διευθυνση, Θεσσαλονίκη<br />τηλ 21000000']  };
+
+// Missing: Διεθνές POS
+PAYMETHODS = {
+  'Μετρητά': '3',
+  'POS': '1'
+  };
+
+// populate Branch DD
+for (var i = 0; i < Object.keys(BRANCHES).length; i++) {
+  var opt_branch = document.createElement("option");
+  opt_branch.text = Object.keys(BRANCHES)[i]
+  dd_branch.options.add(opt_branch);
+}
+
+// populate Paymethods
+for (var i = 0; i < Object.keys(PAYMETHODS).length; i++) {
+  var opt_paymethod = document.createElement("option");
+  opt_paymethod.text = Object.keys(PAYMETHODS)[i]
+  dd_paymethod.options.add(opt_paymethod);
+}
+
+// populate Search Categories DD
+searchCategs = [
+               "1. Αριθμός ΑΠΥ [από] ... [έως]",
+               "2. Ημερομηνία [από] ... [έως]",
+               "5. Στοιχεία [Όνομα] και [Αιτία]"
+               ] 
+for (var i = 0; i < searchCategs.length; i++) {
+  var opt_range = document.createElement("option");
+  opt_range.text = searchCategs[i]
+  dd_range.options.add(opt_range);
+}
+dd_range.value = searchCategs[1];
+
+// Set today's date in entries
+let today = new Date().toISOString().slice(0, 10)
+document.getElementById("date").value = today;
+document.getElementById("until").value = today;
+
+var INVOICES = [];
+var INVOICE_HEAD = 'ΥΠΟΚ; ΑΑ; ΗΜ/ΝΙΑ; ΠΟΣΟ; ΠΛΗΡ; ΟΝ/ΜΟ-ΑΙΤΙΑ; ΜΑΡΚ';
+var D = ";"
+
+RequestTransmittedDocs();
+
+// =====================================================
+// SEND methods
+// =====================================================
+
+function SendInvoice() {
+
+  let params = {};
+  let branchID = BRANCHES[document.getElementById("dd_branch").value][0];
+  let aa = document.getElementById("aa").value;
+  let date = document.getElementById("date").value;
+  let amount = document.getElementById("amount").value;
+  let paymethod = PAYMETHODS[document.getElementById("dd_paymethod").value][0];
+  let comments = document.getElementById("name").value + ',' +
+                 document.getElementById("address").value + '-' +
+                 document.getElementById("reason").value;
+
+      xml_payload = `
+      <InvoicesDoc xmlns="http://www.aade.gr/myDATA/invoice/v1.0" xmlns:icls="https://www.aade.gr/myDATA/incomeClassificaton/v1.0" xmlns:ecls="https://www.aade.gr/myDATA/expensesClassificaton/v1.0">
+
+<invoice>
+	<issuer>
+		<vatNumber>062725970</vatNumber>
+		<country>GR</country>
+		<branch>${branchID}</branch>
+	</issuer>
+	<invoiceHeader>
+		<series>A</series>
+		<aa>${aa}</aa>
+		<issueDate>${date}</issueDate>
+		<invoiceType>11.2</invoiceType>
+		<currency>EUR</currency>
+	</invoiceHeader>
+	<paymentMethods>
+		<paymentMethodDetails>
+			<type>${paymethod}</type>
+			<amount>${amount}</amount>
+			<paymentMethodInfo>${comments}</paymentMethodInfo>
+		</paymentMethodDetails>
+	</paymentMethods>
+	<invoiceDetails>
+		<lineNumber>1</lineNumber>
+		<netValue>${amount}</netValue>
+		<vatCategory>7</vatCategory>
+		<vatAmount>0</vatAmount>
+		<vatExemptionCategory>7</vatExemptionCategory>
+		<incomeClassification>
+			<icls:classificationType>E3_561_003</icls:classificationType>
+			<icls:classificationCategory>category1_3</icls:classificationCategory>
+			<icls:amount>${amount}</icls:amount>
+                    <icls:id>1</icls:id>
+		</incomeClassification>
+	</invoiceDetails>
+	<invoiceSummary>
+		<totalNetValue>${amount}</totalNetValue>
+		<totalVatAmount>0</totalVatAmount>
+		<totalWithheldAmount>0.00</totalWithheldAmount>
+		<totalFeesAmount>0.00</totalFeesAmount>
+		<totalStampDutyAmount>0.00</totalStampDutyAmount>
+		<totalOtherTaxesAmount>0.00</totalOtherTaxesAmount>
+		<totalDeductionsAmount>0.00</totalDeductionsAmount>
+		<totalGrossValue>${amount}</totalGrossValue>
+		<incomeClassification>
+			<icls:classificationType>E3_561_003</icls:classificationType>
+			<icls:classificationCategory>category1_3</icls:classificationCategory>
+			<icls:amount>${amount}</icls:amount>
+		</incomeClassification>
+	</invoiceSummary>
+</invoice>
+</InvoicesDoc>
+`
+        $.ajax({
+            url: url + "/SendInvoices?" + $.param(params),
+            beforeSend: function(xhrObj){
+                // Request headers
+                xhrObj.setRequestHeader("aade-user-id", user);
+                xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key", key);
+            },
+            type: "POST",
+            data: xml_payload,
+        })
+        .done(function(data) {
+          xmlDoc = parser.parseFromString(data, "text/xml");
+          var mark = xmlDoc.getElementsByTagName("invoiceMark")[0].textContent;
+          alert("Success! Mark = " + mark);
+        })
+        .fail(function() {
+            alert("Error. Bad Send request");
+        });
+    };
+
+
+function adjustForBranch() {
+
+  var max_aa = 0;
+  for (var i = 0; i < INVOICES.length; i++) {
+    if ( INVOICES[i].split(D)[0] === BRANCHES[document.getElementById("dd_branch").value][0] &&
+         Number(INVOICES[i].split(D)[1]) > max_aa ) {
+       max_aa = Number(INVOICES[i].split(D)[1]);
+    }
+  } 
+
+  document.getElementById("aa").value = (max_aa+1).toString();
+  document.getElementById("address").value =  document.getElementById("dd_branch").value;
+
+}
+
+
+// =====================================================
+// SEARCH methods
+// =====================================================
+
+// REQUEST invoices from MyDATA (with mark > 0, ie. all)
+function RequestTransmittedDocs() {
+
+    var params = {"mark": "0"};
+      
+       return $.ajax({
+            url: url + "/RequestTransmittedDocs?" + $.param(params),
+            beforeSend: function(xhrObj){
+                xhrObj.setRequestHeader("aade-user-id", user);
+                xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key", key);
+            },
+            type: "GET",
+        })
+     .done(function(data) {
+
+       parser = new DOMParser();
+       xmlDoc = parser.parseFromString(data, "text/xml");
+       var inv = xmlDoc.getElementsByTagName("invoice");
+
+       for (var i = 0; i < inv.length; i++) {
+ 
+         // Checks if not Cancelled
+         if (typeof inv[i].getElementsByTagName("cancelledByMark") == "undefined" ||
+           inv[i].getElementsByTagName("cancelledByMark").length == 0) {
+
+           l =
+             inv[i].getElementsByTagName("branch")[0].textContent + D +
+             inv[i].getElementsByTagName("aa")[0].textContent + D +
+             inv[i].getElementsByTagName("issueDate")[0].textContent + D +
+             inv[i].getElementsByTagName("amount")[0].textContent + D +
+             inv[i].getElementsByTagName("type")[0].textContent + D +
+             inv[i].getElementsByTagName("paymentMethodInfo")[0].textContent + D +
+             inv[i].getElementsByTagName("mark")[0].textContent;
+
+           INVOICES.push(l);
+          }
+        }
+        SearchAndPopulate()            
+        
+      })
+      .fail(function() {
+         alert("Error. Bad Receive request");
+      });
+    };
+
+
+// Searches based on range and populates invoice DD
+function SearchAndPopulate() {
+
+  setRange();
+  
+  var from = document.getElementById("from").value;
+  var until = document.getElementById("until").value;
+
+  removeOptions(document.getElementById('dd_invoice'));
+  var opt_invoice = document.createElement("option");
+  opt_invoice.text = INVOICE_HEAD;
+  dd_invoice.options.add(opt_invoice);
+
+  i = document.getElementById('dd_range').value.charAt(0); // TODO: get by index
+  if (i === '1') {        // AA search
+    for (var i = 0; i < INVOICES.length; i++) {
+      t = Number(INVOICES[i].split(D)[1]);
+      if ( t >= Number(from) && t <= Number(until)) {
+        opt_invoice = document.createElement("option");
+        opt_invoice.text = INVOICES[i];
+        dd_invoice.options.add(opt_invoice);
+       }
+    }
+
+  } else if (i === '2') { // Date search
+    for (var i = 0; i < INVOICES.length; i++) {
+      t = INVOICES[i].split(D)[2];
+      if (t >= from && t <= until) {
+        opt_invoice = document.createElement("option");
+        opt_invoice.text = INVOICES[i];
+        dd_invoice.options.add(opt_invoice); // 
+       }
+    }
+
+  } else {               // Name-Visit search
+    for (var i = 0; i < INVOICES.length; i++) {
+      t = INVOICES[i].split(D)[5].split('-');
+      if ( (t[0].includes(from) || t[1].includes(from))
+            && t[2].includes(until) ) {
+        opt_invoice = document.createElement("option");
+        opt_invoice.text = INVOICES[i];
+        dd_invoice.options.add(opt_invoice); // 
+       }
+    }
+  } 
+  
+}
+
+
+// Sets default or validates given range
+function setRange() { // TODO set range rules
+
+  var from = document.getElementById("from").value;
+  var until = document.getElementById("until").value;
+
+}
+
+
+// Adds mark to mark entry for the selected invoice
+function setMark() {
+    d = document.getElementById("dd_invoice").value;
+    document.getElementById("mark").value = d.split(D)[6];
+}
+
+
+// =====================================================
+// CANCEL method
+// =====================================================
+
+function Cancel() {
+ var mark = document.getElementById("mark").value
+
+         var params = {
+            "mark": document.getElementById("mark").value,
+        };
+      
+        $.ajax({
+            url: url + "/CancelInvoice?" + $.param(params),
+            beforeSend: function(xhrObj){
+                // Request headers
+                xhrObj.setRequestHeader("aade-user-id",user);
+                xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key",key);
+            },
+            type: "POST",
+            data: "",
+        })
+        .done(function(data) {
+          alert("Success. Cancelled Mark = " + mark);
+          document.getElementById("mark").value =  "";
+          // TODO: remove line from INVOICES and populate the DD
+          RequestTransmittedDocs();
+                  
+        })
+        .fail(function() {
+            alert("Error. Bad Cancel request");
+        });
+    };
+    
+
+// ====================
+// PRINT methods 
+// ====================
+
+function removeOptions(selectElement) {
+   var i, L = selectElement.options.length - 1;
+   for(i = L; i >= 0; i--) {
+      selectElement.remove(i);
+   }
+}
+
+
+function PrintInvoice(mode) {
+
+
+if ('mode' === 'online') {
+
+  let mark = document.getElementById("mark").value;
+  // TODO check if mark is valid and if not found
+  for (var i = 0; i < INVOICES.length; i++) {
+    if (INVOICES[i].include(mark)) {
+      invoice_info = l.split(D);
+      // TODO: get values from BRANCHES dict
+      if (invoice_info[0] == '0') {
+                                   invoice_info[0] = BRANCHES('Αθήνα')[2];
+                                   }
+      else {
+            invoice_info[0] = BRANCHES('Θεσσαλονίκη')[2];
+            }
+      pat_info = invoice_info[5].split('-');
+    }
+  }
+}
+
+else { // 'offline'
+
+  invoice_info = [
+                  BRANCHES[document.getElementById("dd_branch").value][1]
+                  , document.getElementById("aa").value
+                  , document.getElementById("date").value
+                  , document.getElementById("amount").value
+                  ]
+  pat_info =     [
+                  document.getElementById("name").value
+                  , document.getElementById("address").value
+                  , document.getElementById("reason").value
+                  ]
+}
+
+  apy_html = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>ΑΠΥ Ιατρικών Υπηρεσιών</title>
+    <style>
+      .invoice-box {
+        max-width: 800px;
+        margin: auto;
+        padding: 30px;
+        border: 1px solid #eee;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.15);
+        font-size: 16px;
+        line-height: 24px;
+        font-family: 'Helvetica Neue', 'Helvetica', Helvetica, Arial, sans-serif;
+        color: #555;
+      }
+      .invoice-box table {
+        width: 100%%;
+        line-height: inherit;
+        text-align: left;
+      }
+      .invoice-box table td {
+        padding: 5px;
+        vertical-align: top;
+      }
+      .invoice-box table tr td:nth-child(2) {
+        text-align: right;
+      }
+      .invoice-box table tr.top table td {
+        padding-bottom: 20px;
+      }
+      .invoice-box table tr.top table td.title {
+        font-size: 45px;
+        line-height: 45px;
+        color: #333;
+      }
+      .invoice-box table tr.information table td {
+        padding-bottom: 40px;
+      }
+      .invoice-box table tr.heading td {
+        background: #eee;
+        border-bottom: 1px solid #ddd;
+        font-weight: bold;
+      }
+      .invoice-box table tr.details td {
+        padding-bottom: 20px;
+      }
+      .invoice-box table tr.item td {
+        border-bottom: 1px solid #eee;
+      }
+      .invoice-box table tr.item.last td {
+        border-bottom: none;
+      }
+      .invoice-box table tr.total td:nth-child(2) {
+        border-top: 2px solid #eee;
+        font-weight: bold;
+      }
+      @media only screen and (max-width: 600px) {
+        .invoice-box table tr.top table td {
+          width: 100%%;
+          display: block;
+          text-align: center;
+        }
+        .invoice-box table tr.information table td {
+          width: 100%%;
+          display: block;
+          text-align: center;
+        }
+      }
+      /** RTL **/
+      .invoice-box.rtl {
+        direction: rtl;
+        font-family: Tahoma, 'Helvetica Neue', 'Helvetica', Helvetica, Arial, sans-serif;
+      }
+      .invoice-box.rtl table {
+        text-align: right;
+      }
+      .invoice-box.rtl table tr td:nth-child(2) {
+        text-align: left;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="invoice-box">
+      <table cellpadding="0" cellspacing="0">
+        <tr class="top">
+          <td colspan="2">
+            <table>
+              <tr class="heading">
+                <td>
+                  ΕΥΑΓΓΕΛΟΣ Δ. ΤΣΟΥΚΑΣ<br />
+                  Ιατρικές Υπηρεσίες Νευρολογίας<br />
+                  ΑΦΜ: 062725970, ΔΟΥ: ΦΛΩΡΙΝΑΣ
+                </td>
+                <td>
+                  Απόδειξη Λιανικών Συναλλαγών (ΑΠΥ)<br />
+                  Αριθμός: ${invoice_info[1]}<br />
+                  Ημερομηνία: ${invoice_info[2]}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr class="information">
+          <td colspan="2">
+            <table>
+              <tr>
+                <td>
+                  Υποκατάστημα:<br />
+                  ${invoice_info[0]}
+                </td>
+                <td>
+                  ΠΑΡΑΛΗΠΤΗΣ:<br />
+                  ${pat_info[0]}<br />
+                  ${pat_info[1]}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr class="heading">
+          <td>Υπηρεσία</td>
+          <td>Αξία (Ευρώ)</td>
+        </tr>
+        <tr class="item">
+          <td>${pat_info[2]}<br />
+              (χωρίς ΦΠΑ, άρθρο 22 Κώδικα)
+          </td>
+          <td>${invoice_info[3]}
+          </td>
+        </tr>
+        <tr class="heading">
+          <td></td>
+          <td>ΠΑΡΑΛΑΒΗ &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; ΕΚΔΟΣΗ &emsp;&emsp;&emsp;&emsp;&emsp;</td>
+        </tr>
+      </table>
+    </div>
+  </body>
+</html>
+`
+
+var newWindow = window.open();
+newWindow.document.write(apy_html);
+
+}
+
+
+// END OF JS ##################################
+</script>
+
+
+</body>
+</html>
