@@ -46,61 +46,57 @@ isTesting = 1
 # ===== ATTENTION
 
 # MYDATA credentials
-USER = 'username'
-
+USER = 'user'
 if isTesting:
-  KEY = 'key_dev'
+  KEY      = 'key'
   BASE_URL = 'mydata-dev.azure-api.net'
   BASE_EXT = ''
-
 else:
-  KEY = 'key_dev' # 2nd 7709c399e6584aefbe4f767948419015
+  KEY      = 'key'
   BASE_URL = 'mydatapi.aade.gr'
   BASE_EXT = '/myDATA'
-
 headers = {
   'aade-user-id': USER,
   'Ocp-Apim-Subscription-Key': KEY,
   }
+# MYDATA XML namespace
+NS = '{http://www.aade.gr/myDATA/invoice/v1.0}'
 
-# Υποκαταστήματα με κωδικό από TAXIS
+# Υποκαταστήματα με κωδικό από TAXIS (preffered key is City name)
 BRANCHES = {
-  'Αθήνα': ['1', 'Διευθυνση, Αθήνα<br />τηλ 21000000'],
-  'Θεσσαλονίκη': ['2', 'Διευθυνση, Θεσσαλονίκη<br />τηλ 21000000']
+  'ΑΘΗΝΑ':
+    ['1', 'ΔΙΕΥΘΥΝΣΗ 1, ΤΗΛΕΦΩΝΟ 1'],
+  'ΘΕΣΣΑΛΟΝΙΚΗ':
+    ['2', 'ΔΙΕΥΘΥΝΣΗ 2, ΤΗΛΕΦΩΝΟ 2']
   }
 
-# Missing: Διεθνές POS
+# Paymethods (Missing: Διεθνές POS)
 PAYMETHODS = {
   'Μετρητά': '3',
   'POS': '1'
   }
 
-# MYDATA XML namespace
-NS = '{http://www.aade.gr/myDATA/invoice/v1.0}'
-
-INVOICES = []
+# Globals
+INVOICES     = []
 INVOICE_HEAD = 'ΥΠΟΚ; ΑΑ; ΗΜ/ΝΙΑ; ΠΟΣΟ; ΠΛΗΡ; ΟΝ/ΜΟ-ΑΙΤΙΑ; ΜΑΡΚ'
-# line delimiter
-D = ';'
+MAIN_SERVICE = 'ΣΥΝΤΑΓΟΓΡΑΦΗΣΗ'
+D            = ';' # line delimiter
 
-
-# =====================================================
-# SEND methods
-# =====================================================
 
 def SendInvoice():
   ''' SENDS an invoice to MYDATA '''
 
+  # Get needed entries
   branch = BRANCHES[branchOmVar.get()][0]
   aa = entry_aa.get()
   amount = entry_amount.get()
   date = entry_date.get()
+  paymethod = PAYMETHODS[paymethodOmVar.get()]
   comment = (
              entry_patname.get() + '-' +
              entry_pataddr.get() + '-' +
              entry_patvisit.get()
              ).replace(';', '')
-  paymethod = PAYMETHODS[paymethodOmVar.get()]
 
   payload_xml = """
 <InvoicesDoc xmlns="http://www.aade.gr/myDATA/invoice/v1.0" xmlns:icls="https://www.aade.gr/myDATA/incomeClassificaton/v1.0" xmlns:ecls="https://www.aade.gr/myDATA/expensesClassificaton/v1.0">
@@ -174,6 +170,8 @@ def SendInvoice():
   if (response.startswith('<?xml')):
     response_root = ET.fromstring(response)
     for r in response_root.iter("invoiceMark"): # TODO replace with .find
+
+      # Add sent invoice in global variable
       INVOICES.append(D.join((
                               branch,
                               aa,
@@ -184,12 +182,16 @@ def SendInvoice():
                               r.text
                               )))
       result = 'Επιτυχής!'
-      entry_mark.delete(0,'end')
-      entry_mark.insert(0, r.text)
+
+      # Reinit GUI entries
       entry_aa.delete(0, 'end')
       entry_aa.insert(0, str(int(aa)+1))
-
-      SearchAndPopulate()
+      entry_patname.delete(0,'end')
+      entry_patvisit.delete(0,'end')
+      entry_patvisit.insert(0, MAIN_SERVICE)
+      entry_mark.delete(0,'end')
+      entry_mark.insert(0, r.text)
+      SearchInvoices()
 
     for r in response_root.iter("message"):
       result = r.text
@@ -197,35 +199,15 @@ def SendInvoice():
   else:
      result = response # eg. 'Access Denied'
 
-  label_result = tk.Label(root, text = result, font=(SMALL_FONT))
-  label_result.after(NOTIF_DUR, lambda: label_result.destroy())
-  canvas.create_window(300, H_BUTT+30, window=label_result)
+  ShowNotification(result, [240, H_BUTT+30])
   conn.close()
 
 
-def adjustForBranch():
-  ''' Increments AA and updates city in Address entry based on selected Branch '''
-
-  max_aa = 0
-  for l in INVOICES:
-    if ( l.split(D)[0] == BRANCHES[branchOmVar.get()][0] and
-        int(l.split(D)[1]) > max_aa ):
-       max_aa = int(l.split(D)[1])
-
-  entry_aa.delete(0, 'end')
-  entry_aa.insert(0, str(max_aa+1))
-  entry_pataddr.delete(0, 'end')
-  entry_pataddr.insert(0, branchOmVar.get())
-
-
-
-# =====================================================
-# SEARCH methods
-# =====================================================
-
 
 def RequestTransmittedDocs():
-  ''' REQUEST invoices from MyDATA (with mark > 0, ie. all) '''
+  ''' REQUEST invoices from MyDATA (with mark > 0, ie. all)
+      and calls: SearchInvoices() + AdjustForBranch() 
+   '''
 
   params = urllib.parse.urlencode({'mark': '0'})
   conn = http.client.HTTPSConnection(BASE_URL)
@@ -235,12 +217,12 @@ def RequestTransmittedDocs():
   if (response.startswith('<?xml')):
     response_root = ET.fromstring(response)
 
-    # Build INVOICES variable
+    # Add retrieved invoices in variable
     global INVOICES
     INVOICES = []
     for invoice in response_root.findall('%sinvoicesDoc/%sinvoice' % (NS, NS)):
-
       if not hasattr(invoice.find('%scancelledByMark' % (NS)), 'text'):
+
         branch = invoice.find(
           '%sissuer/%sbranch' % (NS, NS)).text
         aa = invoice.find(
@@ -253,12 +235,10 @@ def RequestTransmittedDocs():
           '%spaymentMethods/%spaymentMethodDetails/%stype' % (NS, NS, NS)).text
         comment = invoice.find(
           '%spaymentMethods/%spaymentMethodDetails/%spaymentMethodInfo' % (NS, NS, NS))
-        mark = invoice.find(
-          '%smark' % (NS)).text
-
         if not (hasattr(comment, 'text') and comment.text is not None): # no comment (pun)
             comment.text = ''
-
+        mark = invoice.find(
+          '%smark' % (NS)).text
         INVOICES.append(D.join((
                                 branch,
                                 aa,
@@ -270,10 +250,12 @@ def RequestTransmittedDocs():
                                 )))
 
     result = 'OK'
-    SearchAndPopulate()
+    SearchInvoices()
+    AdjustForBranch()
 
-    with open("INVOICES.csv", 'w') as f:
-      for l in INVOICES: f.write("%s\n" % l)
+    # Write to a file, just in case
+#    with open("INVOICES.csv", 'w') as f:
+#      for l in INVOICES: f.write("%s\n" % l)
     
     for r in response_root.iter("message"):
       result = r.text
@@ -281,14 +263,12 @@ def RequestTransmittedDocs():
   else:
      result = response
    
-  label_result = tk.Label(root, text = result, font=(SMALL_FONT))
-  label_result.after(NOTIF_DUR, lambda: label_result.destroy())
-  canvas.create_window(650, H_BUTT, window=label_result)
+  ShowNotification(result, [650, H_BUTT])
   conn.close()
 
 
-def SearchAndPopulate():
-  ''' Search based on terms range and populates invoice drop down '''
+def SearchInvoices():
+  ''' Search based on range and populates invoice drop down '''
 
   setRange()
   
@@ -296,76 +276,38 @@ def SearchAndPopulate():
   range_from = entry_from.get()
   sel = [INVOICE_HEAD]
 
-  if searchtermOmVar.get()[0] == '1': # AA search
+  # AA search
+  if searchtermOmVar.get()[0] == '1':
     for l in INVOICES:
       if int(range_from) <= int(l.split(D)[1]) <= int(range_until):
         sel.append(l)
 
-  elif searchtermOmVar.get()[0] == '2': # Date search
+  # Date search
+  elif searchtermOmVar.get()[0] == '2':
     for l in INVOICES:
       if range_from <= l.split(D)[2] <= range_until:
         sel.append(l)
 
-  else: # Name-Visit search
+  # Name-Visit search
+  else: 
     for l in INVOICES:
       if ( (range_from in l.split(D)[5].split('-')[0])
       and (range_until in l.split(D)[5].split('-')[1]) ):
         sel.append(l)
 
-  # Canvas should be first destroyed (canvas.delete(...))
+  # TODO 1: replace Optionmenu with Combobox
+  # 2: canvas should be first destroyed (canvas.delete(...))
   om_invoices = tk.OptionMenu(root, invoiceOmVar, *sel,
     command=lambda _: setMark())
-  canvas.create_window(510, H_LOW, window=om_invoices, width = 360)
+  canvas.create_window(520, H_LOW, window=om_invoices, width = 380)
  
-
-def setRange():
-  ''' Sets default or validates given range '''
-  
-  range_until = entry_until.get()
-  range_from = entry_from.get()
-
-  if searchtermOmVar.get()[0] == '1': # AA range
-    if not range_until.isnumeric():
-      entry_until.delete(0, 'end')
-      entry_until.insert(0, "10")
-    if not range_from.isnumeric():
-      entry_from.delete(0, 'end')
-      entry_from.insert(0, "0")
-
-  elif searchtermOmVar.get()[0] == '2': # Date range
-    if '-' not in range_until:
-      range_until = datetime.today().strftime('%Y-%m-%d')
-      entry_until.delete(0, 'end')
-      entry_until.insert(0, range_until)
-    if range_from == '':
-      range_from = range_until
-      entry_from.delete(0, 'end')
-      entry_from.insert(0, range_from)
-
-  else:
-    pass # Name/Visit range not changed
-
-
-def setMark():
-  ''' Adds mark to mark entry for the selected invoice '''
-
-  entry_mark.delete(0,'end')
-  entry_mark.insert(0, invoiceOmVar.get().split(D)[6].strip())
-
-
-
-# =====================================================
-# CANCEL methods
-# =====================================================
 
 def CancelInvoice():
   ''' CANCEL an invoice based on mark (there is no way to corrent an already sent invoice '''
 
   mark = entry_mark.get()
   if (len(mark) != 15):
-    label_result = tk.Label(root, text = "Μη έγκυρο ΜΑΡΚ", font=(SMALL_FONT))
-    label_result.after(NOTIF_DUR, lambda: label_result.destroy())
-    canvas.create_window(800, H_UPP+20, window=label_result)
+    ShowNotification("Μη έγκυρο ΜΑΡΚ", [800, H_UPP+20])
     return
     
   params = urllib.parse.urlencode({'mark': mark})
@@ -375,31 +317,25 @@ def CancelInvoice():
 
   if (response.startswith('<?xml')):
     response_root = ET.fromstring(response)
-
     for r in response_root.iter("cancellationMark"): # TODO: replace with .find
+
+      # Remove cancelled incvoice from global variable
       global INVOICES
       INVOICES = [ x for x in INVOICES if mark not in x ]
       result = 'Επιτυχής!'
       entry_mark.delete(0,'end')
-      SearchAndPopulate()
+      SearchInvoices()
 
     for r in response_root.iter("message"):  # eg. MARK not found
       result = r.text
 
   else:
     result = response
-   
-  label_result = tk.Label(root, text=result, font=(SMALL_FONT))
-  label_result.after(NOTIF_DUR, lambda: label_result.destroy())
-  canvas.create_window(800, H_MID+30, window=label_result)
 
+  ShowNotification(result, [800, H_MID+35])
   conn.close()
 
 
-
-# ====================
-# PRINT methods 
-# ====================
 
 def PrintInvoice(mode):
   ''' Print online = an already valid APY, retreived from INVOICES
@@ -409,23 +345,18 @@ def PrintInvoice(mode):
   if mode == 'online':
     mark = entry_mark.get()
     if (len(mark) != 15):
-      label_result = tk.Label(root, text = "Μη έγκυρο ΜΑΡΚ", font=(SMALL_FONT))
-      label_result.after(NOTIF_DUR, lambda: label_result.destroy())
-      canvas.create_window(800, H_UPP+20, window=label_result)
+      ShowNotification("Μη έγκυρο ΜΑΡΚ", [800, H_UPP+20])
       return
 
     for l in INVOICES:
       if mark in l:
         invoice_info = l.split(D)
-        # TODO: get value from BRANCHES dict
-        if   invoice_info[0] == '1': invoice_info[0] = list(BRANCHES.keys())[1]
-        else: invoice_info[0] = list(BRANCHES.keys())[0]
-        pat_info = invoice_info[5].split('-')
+        # Branch Code -> City works provided the BRANCHES are numbered 1,2... 
+        invoice_info[0] = list(BRANCHES.keys())[int(invoice_info[0])-1]
+        patient_info = invoice_info[5].split('-')
 
     if not ('invoice_info' in locals()):
-      label_result = tk.Label(root, text = "Ο ΜΑΡΚ δεν βρέθηκε", font=(SMALL_FONT))
-      label_result.after(NOTIF_DUR, lambda: label_result.destroy())
-      canvas.create_window(760, H_UPP+20, window=label_result)
+      ShowNotification("Ο ΜΑΡΚ δεν βρέθηκε", [800, H_UPP+20])
       return
       
     entry_mark.delete(0, 'end')
@@ -437,12 +368,14 @@ def PrintInvoice(mode):
                     entry_date.get(),
                     entry_amount.get()
                     ]
-    pat_info = [entry_patname.get(), entry_pataddr.get(), entry_patvisit.get()]
+    patient_info = [entry_patname.get(), entry_pataddr.get(), entry_patvisit.get()]
 
-  if len(pat_info) == 2:
-    pat_info[2] = 'Συνταγογράφηση'
-  if pat_info[2] == '':
-    pat_info[2] = 'Συνταγογράφηση'
+  # empty Name and Address entries
+  if len(patient_info) == 2:
+    patient_info[2] = MAIN_SERVICE
+  # empty Visit entry
+  if patient_info[2] == '':
+    patient_info[2] = MAIN_SERVICE
 
   apy_html = """
 <!DOCTYPE html>
@@ -537,9 +470,9 @@ def PrintInvoice(mode):
             <table>
               <tr class="heading">
                 <td>
-                  ΕΥΑΓΓΕΛΟΣ Δ. ΤΣΟΥΚΑΣ<br />
-                  Ιατρικές Υπηρεσίες Νευρολογίας<br />
-                  ΑΦΜ: 062725970, ΔΟΥ: ΦΛΩΡΙΝΑΣ
+                  ΙΑΤΡΟΣ ΙΑΤΡΟΠΟΥΛΟΣ<br />
+                  Ιατρικές Υπηρεσίες<br />
+                  ΑΦΜ: ΧΧΧ, ΔΟΥ: ΥΥΥ
                 </td>
                 <td>
                   Απόδειξη Λιανικών Συναλλαγών (ΑΠΥ)<br />
@@ -555,7 +488,7 @@ def PrintInvoice(mode):
             <table>
               <tr>
                 <td>
-                  Υποκατάστημα:<br />
+                  Διεύθυνση:<br />
                   %s
                 </td>
                 <td>
@@ -591,38 +524,101 @@ def PrintInvoice(mode):
          invoice_info[1],
          invoice_info[2],    
          BRANCHES[invoice_info[0]][1],
-         pat_info[0],
-         pat_info[1],
-         pat_info[2],
+         patient_info[0],
+         patient_info[1],
+         patient_info[2],
          invoice_info[3]
          )
 
-  file_html = os.path.abspath('apy2print.html')
+  file_html = os.path.abspath('Zapy2print.html')
   with open(file_html, 'w', encoding='utf-8') as f:  # enc... fixes Windows charmap bug 
     f.write(apy_html)
     webbrowser.open('file://' + file_html)
 
 
 
+# SMALL METHODS
+
+def setMark():
+  ''' Adds mark to mark entry for the selected invoice '''
+
+  entry_mark.delete(0,'end')
+  entry_mark.insert(0, invoiceOmVar.get().split(D)[6].strip())
+
+
+def setRange():
+  ''' Sets default or validates given range '''
+  
+  range_until = entry_until.get()
+  range_from = entry_from.get()
+
+  # AA range
+  if searchtermOmVar.get()[0] == '1':
+    if not range_until.isnumeric():
+      entry_until.delete(0, 'end')
+      entry_until.insert(0, "10")
+    if not range_from.isnumeric():
+      entry_from.delete(0, 'end')
+      entry_from.insert(0, "0")
+
+  # Date range
+  elif searchtermOmVar.get()[0] == '2':
+    if '-' not in range_until:
+      range_until = datetime.today().strftime('%Y-%m-%d')
+      entry_until.delete(0, 'end')
+      entry_until.insert(0, range_until)
+    if range_from == '':
+      range_from = range_until
+      entry_from.delete(0, 'end')
+      entry_from.insert(0, range_from)
+
+  # Name/Visit range not changed
+  else:
+    pass
+
+
+def AdjustForBranch():
+  ''' Increments AA and updates city in Address entry based on selected Branch '''
+
+  max_aa = 0
+  for l in INVOICES:
+    if ( l.split(D)[0] == BRANCHES[branchOmVar.get()][0] and
+        int(l.split(D)[1]) > max_aa ):
+       max_aa = int(l.split(D)[1])
+
+  entry_aa.delete(0, 'end')
+  entry_aa.insert(0, str(max_aa+1))
+  entry_pataddr.delete(0, 'end')
+  entry_pataddr.insert(0, branchOmVar.get())
+
+
+def ShowNotification(content, place):
+  ''' Present a temporary notification '''
+
+  label_result = tk.Label(root, text=content, font=(SMALL_FONT))
+  label_result.after(NOTIF_DUR, lambda: label_result.destroy())
+  canvas.create_window(place[0], place[1], window=label_result)
+
+
 
 #===========================
-# GUI
+# GUI: Main Window
 #===========================
 
 NOTIF_DUR = 3000 # msec
+DEF_COLOUR = 'lavender'
+BIG_FONT = 'helvetica', 14
+MID_FONT = 'helvetica', 10
+SMALL_FONT = 'helvetica', 9, 'bold'
 H_TIT = 40
 H_UPP = 80
 H_MID = 120
 H_LOW = 160
 H_BUTT = 230 # no pun intented with 'tit' and 'butt'
-DEF_COLOUR = 'lavender'
-BIG_FONT = 'helvetica', 14
-MID_FONT = 'helvetica', 10
-SMALL_FONT = 'helvetica', 9, 'bold'
 
 root = tk.Tk()
-root.title("ΕΦΑΡΜΟΓΗ MYDATA ΓΙΑ ΙΑΤΡΟΥΣ - TESTING MODE" if isTesting == 1
-            else "ΕΦΑΡΜΟΓΗ MYDATA ΓΙΑ ΙΑΤΡΟΥΣ - PRODUCTION MODE") 
+root.title("ΕΦΑΡΜΟΓΗ MYDATA ΓΙΑ ΙΑΤΡΟΥΣ - TESTING" if isTesting == 1
+            else "ΕΦΑΡΜΟΓΗ MYDATA ΓΙΑ ΙΑΤΡΟΥΣ - PRODUCTION") 
 canvas = tk.Canvas(root, bg=DEF_COLOUR, width = 900, height = 300)
 canvas.pack()
 root.resizable(False, False)
@@ -630,42 +626,46 @@ root.option_add("*font", MID_FONT)
 
 
 #================
-# Αποστολή ΑΠΥ
+# GUI: Αποστολή ΑΠΥ
 #================
 
 canvas.create_window(100, H_TIT, window=tk.Label(root,
     text="Αποστολή ΑΠΥ", bg=DEF_COLOUR, font=BIG_FONT))
     
-# branch dropdown
+# branches
 branchOmVar = tk.StringVar()
 branchOmVar.set(list(BRANCHES.keys())[0])
 om_branch = tk.OptionMenu(root, branchOmVar, *list(BRANCHES.keys()),
-  command=lambda _: adjustForBranch())
-canvas.create_window(240, H_TIT, window=om_branch, width = 100)
+  command=lambda _: AdjustForBranch())
+canvas.create_window(240, H_TIT, window=om_branch, width = 120)
 
 # AA
-canvas.create_window(70, H_UPP, window=tk.Label(root,
+canvas.create_window(90, H_UPP, window=tk.Label(root,
   text="AA", bg=DEF_COLOUR, font=MID_FONT))
 entry_aa = tk.Entry(root)
-canvas.create_window(120, H_UPP, window=entry_aa, width=70)
+canvas.create_window(130, H_UPP, window=entry_aa, width=50)
 
 # date
+canvas.create_window(190, H_UPP, window=tk.Label(root,
+  text="ΗΜ", bg=DEF_COLOUR, font=MID_FONT))
 entry_date = tk.Entry(root)
-canvas.create_window(240, H_UPP, window=entry_date, width=100)
+canvas.create_window(250, H_UPP, window=entry_date, width=90)
 
 # amount
-canvas.create_window(70, H_MID, window=tk.Label(root,
-  text="E", bg=DEF_COLOUR, font=MID_FONT))
+canvas.create_window(90, H_MID, window=tk.Label(root,
+  text="EΥ", bg=DEF_COLOUR, font=MID_FONT))
 entry_amount = tk.Entry(root)
-canvas.create_window(120, H_MID, window=entry_amount, width=70)
+canvas.create_window(130, H_MID, window=entry_amount, width=50)
 
-# paymethod dropdown
+# paymethods
+canvas.create_window(190, H_MID, window=tk.Label(root,
+  text="ΠΛ", bg=DEF_COLOUR, font=MID_FONT))
 paymethodOmVar = tk.StringVar()
 paymethodOmVar.set(list(PAYMETHODS.keys())[0])
 om_paymethod = tk.OptionMenu(root, paymethodOmVar, *list(PAYMETHODS.keys()))
-canvas.create_window(240, H_MID, window=om_paymethod, width = 100)
+canvas.create_window(250, H_MID, window=om_paymethod, width = 90)
 
-# comments
+# patient data (comments)
 canvas.create_window(50, H_LOW, window=tk.Label(root,
   text="Ον/μο", bg=DEF_COLOUR, font=MID_FONT))
 entry_patname = tk.Entry(root)
@@ -687,51 +687,49 @@ button_Send = tk.Button(text="Αποστολή", command=SendInvoice,
 canvas.create_window(150, H_BUTT+30, window=button_Send)
 
 
-#================
-# Αναζήτηση ΑΠΥ
-#================
+#====================
+# GUI: Αναζήτηση ΑΠΥ
+#====================
 
-canvas.create_window(510, H_TIT, window=tk.Label(root,
+canvas.create_window(520, H_TIT, window=tk.Label(root,
   text="Αναζήτηση ΑΠΥ", bg=DEF_COLOUR, font=BIG_FONT))
 
-# search terms dropdown, X. is based on columns index 
+# search terms (X = index in columns) 
 searchTerms = [
-               "1. Αριθμοί ΑΠΥ [Από] [Έως]",
-               "2. Ημερομηνία [Από] [Έως]",
-               "5. Στοιχεία [Όνομα ή Αιτία]"
+               "1. Αριθμοί ΑΠΥ [Από] [Έως]"
+             , "2. Ημερομηνία [Από] [Έως]"
+             , "5. Στοιχεία [Όνομα ή Αιτία]"
                ] 
 searchtermOmVar = tk.StringVar()
 searchtermOmVar.set(searchTerms[1])
 om_searchterm = tk.OptionMenu(root, searchtermOmVar, *searchTerms,
     command=lambda _: setRange())
-canvas.create_window(510, H_UPP, window=om_searchterm, width = 200)
+canvas.create_window(520, H_UPP, window=om_searchterm, width = 210)
 
 # range
 entry_from = tk.Entry(root)
-canvas.create_window(450, H_MID, window=entry_from, width = 100)
+canvas.create_window(460, H_MID, window=entry_from, width = 90)
 entry_until = tk.Entry(root)
-canvas.create_window(570, H_MID, window=entry_until, width = 100)
+canvas.create_window(580, H_MID, window=entry_until, width = 90)
 
-# invoice dropdown (TODO: replace Optionmenu with Combobox)
+# invoices (the rest is implemented in SearchInvoices)
 invoiceOmVar = tk.StringVar()
 invoiceOmVar.set(INVOICE_HEAD)
-om_invoices = tk.OptionMenu(root, invoiceOmVar, [])
-canvas.create_window(510, H_LOW, window=om_invoices, width = 360)
 
 # Search button
 button_Request = tk.Button(text='Αναζήτηση',
-  command=SearchAndPopulate,
+  command=SearchInvoices,
   bg='brown', fg='white', font=(MID_FONT))
-canvas.create_window(440, H_BUTT, window=button_Request)
+canvas.create_window(450, H_BUTT, window=button_Request)
 
 # Sync button
 button_RequestTransmittedDocs = tk.Button(text='Sync MyDATA',
   command=RequestTransmittedDocs)
-canvas.create_window(570, H_BUTT, window=button_RequestTransmittedDocs)
+canvas.create_window(580, H_BUTT, window=button_RequestTransmittedDocs)
 
-#================
-# Διαχείριση ΑΠΥ
-#================
+#=====================
+# GUI: Διαχείριση ΑΠΥ
+#=====================
 
 canvas.create_window(800, H_TIT, window=tk.Label(root,
     text="Διαχείριση ΑΠΥ", bg=DEF_COLOUR, font=BIG_FONT))
@@ -758,16 +756,16 @@ button_Print_offline = tk.Button(text='Εκτύπωση Offline',
   bg='brown', fg='white', font=(MID_FONT))
 canvas.create_window(800, H_BUTT , window=button_Print_offline)
 
+#=====================
+# GUI: Initialise
+#=====================
 
-# Initialise and...
 entry_amount.insert(0, '5.00')
 entry_date.insert(0, datetime.today().strftime('%Y-%m-%d'))
-entry_patname.insert(0, 'Αρρωστος')
 entry_pataddr.insert(0, branchOmVar.get())
-entry_patvisit.insert(0, 'Συνταγογράφηση')
+entry_patvisit.insert(0, MAIN_SERVICE)
 if os.name != 'nt': # well, Windows ...
   RequestTransmittedDocs()
-  adjustForBranch()
 
 # BAM!!!
 root.mainloop()
