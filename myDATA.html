@@ -16,7 +16,7 @@ ATTENTION: CHECK isTesting operation BEFORE USE!!
 5) εκτύπωση ΑΠΥ βάση ΜΑΡΚ ή βάση των entries (offline) 
 
 Invoice columns: Υποκ, ΑΑ, Ημ/νία, Ποσό, Πληρωμή, Σχόλιο, ΜΑΡΚ
-Comment = Patient Name - Address - Visit reason
+Comment = Patient Name , Address - Visit reason
 
 Hardcoded User info:
 1) isTesting operation, CHECK IT BEFORE USE!!
@@ -40,10 +40,10 @@ Hardcoded User info:
 <p> ΑΠΟΣΤΟΛΗ ΑΠΥ </p>
 
   <label for="aa">Εδρα:</label>
-  <select id="dd_branch" onchange="adjustForBranch()"></select><br><br>
+  <select id="dd_branch" onchange="AdjustForBranch()"></select><br><br>
 
   <label for="aa">ΑΑ:</label>
-  <input type="text" id="aa" name="aa" value="10">
+  <input type="text" id="aa" name="aa" value="">
 
   <label for="Date">Ημερομηνία:</label>
   <input type="text" id="date" name="date" value=""><br><br>
@@ -56,9 +56,9 @@ Hardcoded User info:
   <label for="Name">Ον/μο:</label>
   <input type="text" id="name" name="name" value="Αρρωστος"><br><br>
   <label for="Address">Διεύθ:</label>
-  <input type="text" id="address" name="address" value="Αθηνα"><br><br>
+  <input type="text" id="address" name="address" value="ΦΛΩΡΙΝΑ"><br><br>
   <label for="reason">Αιτία:</label>
-  <input type="text" id="reason" name="reason" value="Συνταγογράφηση"><br><br>
+  <input type="text" id="reason" name="reason" value="ΣΥΝΤΑΓΟΓΡΑΦΗΣΗ"><br><br>
 
   <button onclick="SendInvoice()">ΑΠΟΣΤΟΛΗ</button><br><br>
 
@@ -72,7 +72,7 @@ Hardcoded User info:
 
   <select onchange="setMark()" id="dd_invoice"></select><br><br>
 
-  <button onclick="SearchAndPopulate()">ΑΝΑΖΗΤΗΣΗ</button>
+  <button onclick="SearchInvoices()">ΑΝΑΖΗΤΗΣΗ</button>
 
   <button onclick="RequestTransmittedDocs()">Sync MyDATA</button><br><br>
 
@@ -96,23 +96,28 @@ Hardcoded User info:
 
 var isTesting = 1;
 
-  var user = "username";
+var user = "user";
 
 if (isTesting == 1) {
-  var key = "key-dev";
-  var url = "https://mydata-dev.azure-api.net";
-  document.getElementById("title").innerHTML = "ΕΦΑΡΜΟΓΗ ΠΑΡΑΣΤΑΤΙΚΩΝ MYDATA ΓΙΑ ΓΙΑΤΡΟΥΣ - TESTING"
+    var key = "key";
+    var url = "https://mydata-dev.azure-api.net";
+    document.getElementById("title").innerHTML =
+      "ΕΦΑΡΜΟΓΗ ΠΑΡΑΣΤΑΤΙΚΩΝ MYDATA ΓΙΑ ΓΙΑΤΡΟΥΣ - TESTING"
 }
 else {
-  var key = "key-prod";
-  var url = "https://mydatapi.aade.gr/myDATA";
-  document.getElementById("title").innerHTML = "ΕΦΑΡΜΟΓΗ ΠΑΡΑΣΤΑΤΙΚΩΝ MYDATA ΓΙΑ ΓΙΑΤΡΟΥΣ - PRODUCTION"
+    var key = "key";
+    var url = "https://mydatapi.aade.gr/myDATA";
+    document.getElementById("title").innerHTML =
+      "ΕΦΑΡΜΟΓΗ ΠΑΡΑΣΤΑΤΙΚΩΝ MYDATA ΓΙΑ ΓΙΑΤΡΟΥΣ - PRODUCTION"
 }
 
 // Υποκαταστήματα με κωδικό από TAXIS
 BRANCHES = {
-  'Αθήνα': ['1', 'Διευθυνση, Αθήνα<br />τηλ 21000000'],
-  'Θεσσαλονίκη': ['2', 'Διευθυνση, Θεσσαλονίκη<br />τηλ 21000000']  };
+  'ΑΘΗΝΑ': [
+  '1', 'ΔΙΕΥΘΥΝΣΗ 1'],
+  'ΘΕΣΣΑΛΟΝΙΚΗ': [
+  '2', 'ΔΙΕΥΘΥΝΣΗ 2'],
+  };
 
 // Missing: Διεθνές POS
 PAYMETHODS = {
@@ -120,62 +125,59 @@ PAYMETHODS = {
   'POS': '1'
   };
 
+var INVOICES = [];
+var INVOICE_HEAD = 'ΥΠΟΚ; ΑΑ; ΗΜ/ΝΙΑ; ΠΟΣΟ; ΠΛΗΡ; ΟΝ/ΜΟ-ΑΙΤΙΑ; ΜΑΡΚ';
+var D = ";"
+
 // populate Branch DD
-for (var i = 0; i < Object.keys(BRANCHES).length; i++) {
-  var opt_branch = document.createElement("option");
-  opt_branch.text = Object.keys(BRANCHES)[i]
-  dd_branch.options.add(opt_branch);
+for (let i = 0; i < Object.keys(BRANCHES).length; i++) {
+    let opt_branch = document.createElement("option");
+    opt_branch.text = Object.keys(BRANCHES)[i]
+    dd_branch.options.add(opt_branch);
 }
 
 // populate Paymethods
-for (var i = 0; i < Object.keys(PAYMETHODS).length; i++) {
-  var opt_paymethod = document.createElement("option");
-  opt_paymethod.text = Object.keys(PAYMETHODS)[i]
-  dd_paymethod.options.add(opt_paymethod);
+for (let i = 0; i < Object.keys(PAYMETHODS).length; i++) {
+    let opt_paymethod = document.createElement("option");
+    opt_paymethod.text = Object.keys(PAYMETHODS)[i]
+    dd_paymethod.options.add(opt_paymethod);
 }
 
 // populate Search Categories DD
-searchCategs = [
+searchTerms = [
                "1. Αριθμός ΑΠΥ [από] ... [έως]",
                "2. Ημερομηνία [από] ... [έως]",
                "5. Στοιχεία [Όνομα] και [Αιτία]"
                ] 
-for (var i = 0; i < searchCategs.length; i++) {
-  var opt_range = document.createElement("option");
-  opt_range.text = searchCategs[i]
-  dd_range.options.add(opt_range);
+for (let i = 0; i < searchTerms.length; i++) {
+    let opt_range = document.createElement("option");
+    opt_range.text = searchTerms[i]
+    dd_range.options.add(opt_range);
 }
-dd_range.value = searchCategs[1];
+dd_range.value = searchTerms[1];
 
 // Set today's date in entries
 let today = new Date().toISOString().slice(0, 10)
 document.getElementById("date").value = today;
 document.getElementById("until").value = today;
 
-var INVOICES = [];
-var INVOICE_HEAD = 'ΥΠΟΚ; ΑΑ; ΗΜ/ΝΙΑ; ΠΟΣΟ; ΠΛΗΡ; ΟΝ/ΜΟ-ΑΙΤΙΑ; ΜΑΡΚ';
-var D = ";"
-
 RequestTransmittedDocs();
 
-// =====================================================
-// SEND methods
-// =====================================================
 
+// SENDS an invoice to MyDATA
 function SendInvoice() {
 
-  let params = {};
-  let branchID = BRANCHES[document.getElementById("dd_branch").value][0];
-  let aa = document.getElementById("aa").value;
-  let date = document.getElementById("date").value;
-  let amount = document.getElementById("amount").value;
-  let paymethod = PAYMETHODS[document.getElementById("dd_paymethod").value][0];
-  let comments = document.getElementById("name").value + ',' +
-                 document.getElementById("address").value + '-' +
-                 document.getElementById("reason").value;
+    let branchID  = BRANCHES[document.getElementById("dd_branch").value][0];
+    let aa        = document.getElementById("aa").value;
+    let date      = document.getElementById("date").value;
+    let amount    = document.getElementById("amount").value;
+    let paymethod = PAYMETHODS[document.getElementById("dd_paymethod").value][0];
+    let comment   = document.getElementById("name").value + ',' +
+                    document.getElementById("address").value + '-' +
+                    document.getElementById("reason").value;
 
       xml_payload = `
-      <InvoicesDoc xmlns="http://www.aade.gr/myDATA/invoice/v1.0" xmlns:icls="https://www.aade.gr/myDATA/incomeClassificaton/v1.0" xmlns:ecls="https://www.aade.gr/myDATA/expensesClassificaton/v1.0">
+<InvoicesDoc xmlns="http://www.aade.gr/myDATA/invoice/v1.0" xmlns:icls="https://www.aade.gr/myDATA/incomeClassificaton/v1.0" xmlns:ecls="https://www.aade.gr/myDATA/expensesClassificaton/v1.0">
 
 <invoice>
 	<issuer>
@@ -194,7 +196,7 @@ function SendInvoice() {
 		<paymentMethodDetails>
 			<type>${paymethod}</type>
 			<amount>${amount}</amount>
-			<paymentMethodInfo>${comments}</paymentMethodInfo>
+			<paymentMethodInfo>${comment}</paymentMethodInfo>
 		</paymentMethodDetails>
 	</paymentMethods>
 	<invoiceDetails>
@@ -228,242 +230,230 @@ function SendInvoice() {
 </invoice>
 </InvoicesDoc>
 `
-        $.ajax({
-            url: url + "/SendInvoices?" + $.param(params),
-            beforeSend: function(xhrObj){
-                // Request headers
-                xhrObj.setRequestHeader("aade-user-id", user);
-                xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key", key);
-            },
-            type: "POST",
-            data: xml_payload,
-        })
-        .done(function(data) {
-          xmlDoc = parser.parseFromString(data, "text/xml");
-          var mark = xmlDoc.getElementsByTagName("invoiceMark")[0].textContent;
-          alert("Success! Mark = " + mark);
-        })
-        .fail(function() {
-            alert("Error. Bad Send request");
-        });
-    };
+    $.ajax({
+        url: url + "/SendInvoices?",
+        beforeSend: function(xhrObj){
+            xhrObj.setRequestHeader("aade-user-id", user);
+            xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key", key);
+        },
+        type: "POST",
+        data: xml_payload,
+    })
+    .done(function(data) {
+        xmlDoc = parser.parseFromString(data, "text/xml");
+        let mark = xmlDoc.getElementsByTagName("invoiceMark")[0].textContent;
+        alert("Success! Mark = " + mark);
+        l = ([
+              branchID
+              + D + aa
+              + D + date
+              + D + amount
+              + D + paymethod
+              + D + comment
+              + D + mark
+              ]);
+        INVOICES.push(l);
+        let opt_invoice = document.createElement("option");
+        opt_invoice.text = l;
+        dd_invoice.options.add(opt_invoice);
+    })
+    .fail(function() {
+        alert("Request failed. Please see console for error");
+    });
+};
 
 
-function adjustForBranch() {
-
-  var max_aa = 0;
-  for (var i = 0; i < INVOICES.length; i++) {
-    if ( INVOICES[i].split(D)[0] === BRANCHES[document.getElementById("dd_branch").value][0] &&
-         Number(INVOICES[i].split(D)[1]) > max_aa ) {
-       max_aa = Number(INVOICES[i].split(D)[1]);
-    }
-  } 
-
-  document.getElementById("aa").value = (max_aa+1).toString();
-  document.getElementById("address").value =  document.getElementById("dd_branch").value;
-
-}
-
-
-// =====================================================
-// SEARCH methods
-// =====================================================
 
 // REQUEST invoices from MyDATA (with mark > 0, ie. all)
+// and calls: SearchInvoices() + AdjustForBranch()
 function RequestTransmittedDocs() {
 
-    var params = {"mark": "0"};
+    let params = {"mark": "0"};
       
-       return $.ajax({
-            url: url + "/RequestTransmittedDocs?" + $.param(params),
-            beforeSend: function(xhrObj){
-                xhrObj.setRequestHeader("aade-user-id", user);
-                xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key", key);
-            },
-            type: "GET",
-        })
-     .done(function(data) {
+    $.ajax({
+        url: url + "/RequestTransmittedDocs?" + $.param(params),
+        beforeSend: function(xhrObj){
+            xhrObj.setRequestHeader("aade-user-id", user);
+            xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key", key);
+        },
+        type: "GET",
+    })
 
-       parser = new DOMParser();
-       xmlDoc = parser.parseFromString(data, "text/xml");
-       var inv = xmlDoc.getElementsByTagName("invoice");
+    .done(function(data) {
+        parser = new DOMParser();
+        xmlDoc = parser.parseFromString(data, "text/xml");
+        let inv = xmlDoc.getElementsByTagName("invoice");
 
-       for (var i = 0; i < inv.length; i++) {
- 
-         // Checks if not Cancelled
-         if (typeof inv[i].getElementsByTagName("cancelledByMark") == "undefined" ||
-           inv[i].getElementsByTagName("cancelledByMark").length == 0) {
+        INVOICES = [];
+        for (let i = 0; i < inv.length; i++) {
+            // Check if not Cancelled
+            if (typeof inv[i].getElementsByTagName("cancelledByMark") == "undefined" ||
+                       inv[i].getElementsByTagName("cancelledByMark").length == 0) {
+                l = 
+                    inv[i].getElementsByTagName("branch")[0].textContent
+              + D + inv[i].getElementsByTagName("aa")[0].textContent
+              + D + inv[i].getElementsByTagName("issueDate")[0].textContent
+              + D + inv[i].getElementsByTagName("amount")[0].textContent
+              + D + inv[i].getElementsByTagName("type")[0].textContent
+              + D + inv[i].getElementsByTagName("paymentMethodInfo")[0].textContent
+              + D + inv[i].getElementsByTagName("mark")[0].textContent;
+                INVOICES.push(l);
+            };
+        };
 
-           l =
-             inv[i].getElementsByTagName("branch")[0].textContent + D +
-             inv[i].getElementsByTagName("aa")[0].textContent + D +
-             inv[i].getElementsByTagName("issueDate")[0].textContent + D +
-             inv[i].getElementsByTagName("amount")[0].textContent + D +
-             inv[i].getElementsByTagName("type")[0].textContent + D +
-             inv[i].getElementsByTagName("paymentMethodInfo")[0].textContent + D +
-             inv[i].getElementsByTagName("mark")[0].textContent;
+        SearchInvoices();
+        AdjustForBranch();
+    })
+    .fail(function() {
+        alert("Request failed. Please see console for error");
+    });
+};
 
-           INVOICES.push(l);
-          }
-        }
-        SearchAndPopulate()            
-        
-      })
-      .fail(function() {
-         alert("Error. Bad Receive request");
-      });
-    };
 
 
 // Searches based on range and populates invoice DD
-function SearchAndPopulate() {
+function SearchInvoices() {
 
-  setRange();
-  
-  var from = document.getElementById("from").value;
-  var until = document.getElementById("until").value;
+    // empties the DD and adds HEAD
+    for (let i = document.getElementById('dd_invoice').options.length - 1; i >= 0; i--) {
+        document.getElementById('dd_invoice').remove(i);
+    };
+    let opt_invoice = document.createElement("option");
+    opt_invoice.text = INVOICE_HEAD;
+    dd_invoice.options.add(opt_invoice);
 
-  removeOptions(document.getElementById('dd_invoice'));
-  var opt_invoice = document.createElement("option");
-  opt_invoice.text = INVOICE_HEAD;
-  dd_invoice.options.add(opt_invoice);
+    setRange();
+    let from = document.getElementById("from").value;
+    let until = document.getElementById("until").value;
 
-  i = document.getElementById('dd_range').value.charAt(0); // TODO: get by index
-  if (i === '1') {        // AA search
-    for (var i = 0; i < INVOICES.length; i++) {
-      t = Number(INVOICES[i].split(D)[1]);
-      if ( t >= Number(from) && t <= Number(until)) {
-        opt_invoice = document.createElement("option");
-        opt_invoice.text = INVOICES[i];
-        dd_invoice.options.add(opt_invoice);
-       }
-    }
-
-  } else if (i === '2') { // Date search
-    for (var i = 0; i < INVOICES.length; i++) {
-      t = INVOICES[i].split(D)[2];
-      if (t >= from && t <= until) {
-        opt_invoice = document.createElement("option");
-        opt_invoice.text = INVOICES[i];
-        dd_invoice.options.add(opt_invoice); // 
-       }
-    }
-
-  } else {               // Name-Visit search
-    for (var i = 0; i < INVOICES.length; i++) {
-      t = INVOICES[i].split(D)[5].split('-');
-      if ( (t[0].includes(from) || t[1].includes(from))
-            && t[2].includes(until) ) {
-        opt_invoice = document.createElement("option");
-        opt_invoice.text = INVOICES[i];
-        dd_invoice.options.add(opt_invoice); // 
-       }
-    }
-  } 
-  
-}
-
-
-// Sets default or validates given range
-function setRange() { // TODO set range rules
-
-  var from = document.getElementById("from").value;
-  var until = document.getElementById("until").value;
-
-}
+    let i = document.getElementById('dd_range').value.charAt(0); // TODO: get by index
+    // AA search
+    if (i === '1') {
+        for (let i = 0; i < INVOICES.length; i++) {
+            t = Number(INVOICES[i].split(D)[1]);
+            if ( t >= Number(from) && t <= Number(until)) {
+                opt_invoice = document.createElement("option");
+                opt_invoice.text = INVOICES[i];
+                dd_invoice.options.add(opt_invoice);
+            }
+        }
+    // Date search
+    } else if (i === '2') {
+        for (let i = 0; i < INVOICES.length; i++) {
+            t = INVOICES[i].split(D)[2];
+            if (t >= from && t <= until) {
+                opt_invoice = document.createElement("option");
+                opt_invoice.text = INVOICES[i];
+                dd_invoice.options.add(opt_invoice); // 
+            };
+        };
+    // Name-Visit search
+    } else {
+        for (let i = 0; i < INVOICES.length; i++) {
+            t = INVOICES[i].split(D)[5].split('-');
+            if ( (t[0].includes(from) || t[1].includes(from))
+               && t[2].includes(until) ) {
+                opt_invoice = document.createElement("option");
+                opt_invoice.text = INVOICES[i];
+                dd_invoice.options.add(opt_invoice); // 
+            };
+        };
+    };
+};
 
 
-// Adds mark to mark entry for the selected invoice
-function setMark() {
-    d = document.getElementById("dd_invoice").value;
-    document.getElementById("mark").value = d.split(D)[6];
-}
-
-
-// =====================================================
-// CANCEL method
-// =====================================================
 
 function Cancel() {
- var mark = document.getElementById("mark").value
 
-         var params = {
-            "mark": document.getElementById("mark").value,
-        };
-      
-        $.ajax({
-            url: url + "/CancelInvoice?" + $.param(params),
-            beforeSend: function(xhrObj){
-                // Request headers
-                xhrObj.setRequestHeader("aade-user-id",user);
-                xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key",key);
-            },
-            type: "POST",
-            data: "",
-        })
-        .done(function(data) {
-          alert("Success. Cancelled Mark = " + mark);
-          document.getElementById("mark").value =  "";
-          // TODO: remove line from INVOICES and populate the DD
-          RequestTransmittedDocs();
-                  
-        })
-        .fail(function() {
-            alert("Error. Bad Cancel request");
-        });
+    // Get and check mark
+    let mark = document.getElementById("mark").value;
+    if (mark.length != 15) {
+        alert('Error: Invalid Mark length');
+        return;
     };
+    let params = {
+        "mark": document.getElementById("mark").value
+    };
+      
+    $.ajax({
+        url: url + "/CancelInvoice?" + $.param(params),
+        beforeSend: function(xhrObj){
+            // Request headers
+            xhrObj.setRequestHeader("aade-user-id",user);
+            xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key",key);
+        },
+        type: "POST",
+        data: "",
+    })
+    .done(function(data) {
+        parser = new DOMParser();
+        xmlDoc = parser.parseFromString(data, "text/xml");
+        if (typeof xmlDoc.getElementsByTagName("cancellationMark") != "undefined") {
+            alert("Cancel successful!");
+            document.getElementById("mark").value =  "";
+            // TODO: instead, remove line from INVOICES and populate DD
+            RequestTransmittedDocs();
+        } else {
+            alert("Error: " + xmlDoc.getElementsByTagName("message")[0].textContent);
+        };
+    })
+    .fail(function() {
+        alert("Request failed. Please see console for error");
+    });
+};
     
 
-// ====================
-// PRINT methods 
-// ====================
 
-function removeOptions(selectElement) {
-   var i, L = selectElement.options.length - 1;
-   for(i = L; i >= 0; i--) {
-      selectElement.remove(i);
-   }
-}
-
-
+// Print online = an already valid APY, retreived from INVOICES
+// Print offline = a virtual APY, retreived from GUI entries
 function PrintInvoice(mode) {
 
+    if (mode === 'online') {
 
-if ('mode' === 'online') {
+        let mark = document.getElementById("mark").value;
+        if (mark.length != 15) {
+            alert('Error: Ακυρο μήκος ΜΑΡΚ');
+            return;
+        };
+        for (let i = 0; i < INVOICES.length; i++) {
+            if (INVOICES[i].includes(mark)) {
+                invoice_info = INVOICES[i].split(D);
+                // Convert: branch Code -> City -> Address
+                // (works provided the BRANCHES are numbered 1,2...) 
+                invoice_info[0] = Object.keys(BRANCHES)[invoice_info[0]-1];
+                patient_info = invoice_info[5].split('-');
+            };
+        };
+        if (typeof invoice_info == 'undefined') {
+            alert('Error: Δεν βρέθηκε ο ΜΑΡΚ');
+            return;
+        };
 
-  let mark = document.getElementById("mark").value;
-  // TODO check if mark is valid and if not found
-  for (var i = 0; i < INVOICES.length; i++) {
-    if (INVOICES[i].include(mark)) {
-      invoice_info = l.split(D);
-      // TODO: get values from BRANCHES dict
-      if (invoice_info[0] == '0') {
-                                   invoice_info[0] = BRANCHES('Αθήνα')[2];
-                                   }
-      else {
-            invoice_info[0] = BRANCHES('Θεσσαλονίκη')[2];
-            }
-      pat_info = invoice_info[5].split('-');
+    } else { // 'offline'
+
+        invoice_info = [
+          document.getElementById("dd_branch").value
+          , document.getElementById("aa").value
+          , document.getElementById("date").value
+          , document.getElementById("amount").value
+          ]
+        patient_info = [
+          document.getElementById("name").value
+          , document.getElementById("address").value
+          , document.getElementById("reason").value
+          ]
+    };
+
+    // empty Name and Address entries
+    if (patient_info.length == 2) {
+        patient_info[2] = 'ΣΥΝΤΑΓΟΓΡΑΦΗΣΗ'
     }
-  }
-}
+    // empty Visit entry
+    if (patient_info[2] === '') {
+        patient_info[2] = 'ΣΥΝΤΑΓΟΓΡΑΦΗΣΗ'
+    }
 
-else { // 'offline'
-
-  invoice_info = [
-                  BRANCHES[document.getElementById("dd_branch").value][1]
-                  , document.getElementById("aa").value
-                  , document.getElementById("date").value
-                  , document.getElementById("amount").value
-                  ]
-  pat_info =     [
-                  document.getElementById("name").value
-                  , document.getElementById("address").value
-                  , document.getElementById("reason").value
-                  ]
-}
-
-  apy_html = `
+    apy_html = `
 <!DOCTYPE html>
 <html>
   <head>
@@ -556,9 +546,9 @@ else { // 'offline'
             <table>
               <tr class="heading">
                 <td>
-                  ΕΥΑΓΓΕΛΟΣ Δ. ΤΣΟΥΚΑΣ<br />
-                  Ιατρικές Υπηρεσίες Νευρολογίας<br />
-                  ΑΦΜ: 062725970, ΔΟΥ: ΦΛΩΡΙΝΑΣ
+                  ΙΑΤΡΟΣ ΙΑΤΡΙΔΗΣ<br />
+                  Ιατρικές Υπηρεσίες<br />
+                  ΑΦΜ: ΧΧΧ, ΔΟΥ: ΥΥΥ
                 </td>
                 <td>
                   Απόδειξη Λιανικών Συναλλαγών (ΑΠΥ)<br />
@@ -574,13 +564,13 @@ else { // 'offline'
             <table>
               <tr>
                 <td>
-                  Υποκατάστημα:<br />
-                  ${invoice_info[0]}
+                  Διεύθυνση:<br />
+                  ${BRANCHES[invoice_info[0]][1]}
                 </td>
                 <td>
                   ΠΑΡΑΛΗΠΤΗΣ:<br />
-                  ${pat_info[0]}<br />
-                  ${pat_info[1]}
+                  ${patient_info[0]}<br />
+                  ${patient_info[1]}
                 </td>
               </tr>
             </table>
@@ -592,7 +582,7 @@ else { // 'offline'
           <td>Αξία (Ευρώ)</td>
         </tr>
         <tr class="item">
-          <td>${pat_info[2]}<br />
+          <td>${patient_info[2]}<br />
               (χωρίς ΦΠΑ, άρθρο 22 Κώδικα)
           </td>
           <td>${invoice_info[3]}
@@ -608,11 +598,50 @@ else { // 'offline'
 </html>
 `
 
-var newWindow = window.open();
-newWindow.document.write(apy_html);
+    var newWindow = window.open();
+    newWindow.document.write(apy_html);
 
 }
 
+
+// =====================================================
+// Small methods
+// =====================================================
+
+
+// Adds mark to entry for the selected invoice
+function setMark() {
+
+    document.getElementById("mark").value = 
+        document.getElementById("dd_invoice").value.split(D)[6];
+
+};
+
+
+// Sets default or validates given range
+function setRange() {
+
+    let from = document.getElementById("from").value;
+    let until = document.getElementById("until").value;
+
+    // TODO set default ranges
+};
+
+
+// Find and set max aa for specified branch
+function AdjustForBranch() {
+
+    let max_aa = 0;
+    for (let i = 0; i < INVOICES.length; i++) {
+        if ( INVOICES[i].split(D)[0] === BRANCHES[document.getElementById("dd_branch").value][0] &&
+             Number(INVOICES[i].split(D)[1]) > max_aa ) {
+            max_aa = Number(INVOICES[i].split(D)[1]);
+       }
+    } 
+    document.getElementById("aa").value = (max_aa+1).toString();
+    document.getElementById("address").value =  document.getElementById("dd_branch").value;
+
+}
 
 // END OF JS ##################################
 </script>
