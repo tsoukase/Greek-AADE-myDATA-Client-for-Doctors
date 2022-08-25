@@ -10,19 +10,20 @@ ATTENTION: CHECK isTesting operation BEFORE USE!!
 
 Υποστηρίζει:
 1) αποστολή ΑΠΥ
-2) κατέβασμα όλων των ΑΠΥ από MyDATA
+2) κατέβασμα ΑΠΥ από MyDATA (>MARK_MIN)
 2) αναζήτηση με βάση ΑΑ, ημερoμηνία, όνομα/αιτία
 4) ακύρωση ΑΠΥ βάση ΜΑΡΚ
-5) εκτύπωση ΑΠΥ βάση ΜΑΡΚ ή βάση των entries (offline) 
-
-Invoice columns: Υποκ, ΑΑ, Ημ/νία, Ποσό, Πληρωμή, Σχόλιο, ΜΑΡΚ
-Comment = Patient Name , Address - Visit reason
+5) εκτύπωση ΑΠΥ βάση ΜΑΡΚ (online) ή entries (offline) 
 
 Hardcoded User info:
-1) isTesting operation, CHECK IT BEFORE USE!!
+1) isTesting operation
 2) Username and Keys
 3) Branches (όπως φαίνονται στο Taxis)
 4) Paymethods
+5) Minimum MARK to download invoices
+
+Invoice columns: Υποκ, ΑΑ, Ημ/νία, Ποσό, Πληρωμή, Σχόλιο, ΜΑΡΚ
+Comment format = Patient Name, Address - Visit reason
 
 -->
 
@@ -43,21 +44,21 @@ Hardcoded User info:
   <select id="dd_branch" onchange="AdjustForBranch()"></select><br><br>
 
   <label for="aa">ΑΑ:</label>
-  <input type="text" id="aa" name="aa" value="">
+  <input type="text" id="aa" name="aa" value="" size="5">
 
-  <label for="Date">Ημερομηνία:</label>
-  <input type="text" id="date" name="date" value=""><br><br>
+  <label for="Date">ΗΜΕΡ:</label>
+  <input type="text" id="date" name="date" value="" size="10"><br><br>
 
-  <label for="Amount">Ποσό (Ε):</label>
-  <input type="text" id="amount" name="amount" value="5.00">
+  <label for="Amount">ΠΟΣΟ (Ε):</label>
+  <input type="text" id="amount" name="amount" value="5.00" size="5">
 
   <select id="dd_paymethod"></select><br><br>
 
-  <label for="Name">Ον/μο:</label>
-  <input type="text" id="name" name="name" value="Αρρωστος"><br><br>
-  <label for="Address">Διεύθ:</label>
+  <label for="Name">ΟΝ/ΜΟ:</label>
+  <input type="text" id="name" name="name" value=""><br><br>
+  <label for="Address">ΔΙΕΥΘ:</label>
   <input type="text" id="address" name="address" value="ΦΛΩΡΙΝΑ"><br><br>
-  <label for="reason">Αιτία:</label>
+  <label for="reason">ΑΙΤΙΑ:</label>
   <input type="text" id="reason" name="reason" value="ΣΥΝΤΑΓΟΓΡΑΦΗΣΗ"><br><br>
 
   <button onclick="SendInvoice()">ΑΠΟΣΤΟΛΗ</button><br><br>
@@ -92,44 +93,51 @@ Hardcoded User info:
 
 <script type="text/javascript">
 
+// START OF JS ##################################
+
 // GLOBALS ##############################
+
+var user = "MYUSERNAME";
 
 var isTesting = 1;
 
-var user = "user";
-
 if (isTesting == 1) {
-    var key = "key";
+    var MARK_MIN = 0
+    var key = "MYKEY-testing";
     var url = "https://mydata-dev.azure-api.net";
     document.getElementById("title").innerHTML =
       "ΕΦΑΡΜΟΓΗ ΠΑΡΑΣΤΑΤΙΚΩΝ MYDATA ΓΙΑ ΓΙΑΤΡΟΥΣ - TESTING"
 }
 else {
-    var key = "key";
+    var MARK_MIN = 0; // change as neededLast of Jul 22
+    var key = "MYKEY-production";
     var url = "https://mydatapi.aade.gr/myDATA";
+    var url = "https://cors-anywhere.herokuapp.com/" + url; // bypass CORS!!
     document.getElementById("title").innerHTML =
       "ΕΦΑΡΜΟΓΗ ΠΑΡΑΣΤΑΤΙΚΩΝ MYDATA ΓΙΑ ΓΙΑΤΡΟΥΣ - PRODUCTION"
 }
 
 // Υποκαταστήματα με κωδικό από TAXIS
 BRANCHES = {
-  'ΑΘΗΝΑ': [
-  '1', 'ΔΙΕΥΘΥΝΣΗ 1'],
-  'ΘΕΣΣΑΛΟΝΙΚΗ': [
-  '2', 'ΔΙΕΥΘΥΝΣΗ 2'],
+  'CITY1': [
+  '1', 'ADRESS1, TK1, CITY1<br />τηλ LAND, MOBILE'],
+  'CITY2': [
+  '2', 'ADRESS2, TK2, CITY2<br />τηλ LAND, MOBILE']
   };
 
-// Missing: Διεθνές POS
+// TODO: Missing Διεθνές POS
 PAYMETHODS = {
   'Μετρητά': '3',
   'POS': '1'
   };
 
+// POPULATE GUI ##############################
+
 var INVOICES = [];
 var INVOICE_HEAD = 'ΥΠΟΚ; ΑΑ; ΗΜ/ΝΙΑ; ΠΟΣΟ; ΠΛΗΡ; ΟΝ/ΜΟ-ΑΙΤΙΑ; ΜΑΡΚ';
-var D = ";"
+var D = ";" // delimiter
 
-// populate Branch DD
+// populate Branches
 for (let i = 0; i < Object.keys(BRANCHES).length; i++) {
     let opt_branch = document.createElement("option");
     opt_branch.text = Object.keys(BRANCHES)[i]
@@ -143,7 +151,7 @@ for (let i = 0; i < Object.keys(PAYMETHODS).length; i++) {
     dd_paymethod.options.add(opt_paymethod);
 }
 
-// populate Search Categories DD
+// populate Search Categories
 searchTerms = [
                "1. Αριθμός ΑΠΥ [από] ... [έως]",
                "2. Ημερομηνία [από] ... [έως]",
@@ -156,7 +164,7 @@ for (let i = 0; i < searchTerms.length; i++) {
 }
 dd_range.value = searchTerms[1];
 
-// Set today's date in entries
+// Set today's date
 let today = new Date().toISOString().slice(0, 10)
 document.getElementById("date").value = today;
 document.getElementById("until").value = today;
@@ -164,7 +172,13 @@ document.getElementById("until").value = today;
 RequestTransmittedDocs();
 
 
-// SENDS an invoice to MyDATA
+
+// =====================================================
+// Large methods
+// =====================================================
+
+
+// SEND invoice to MyDATA
 function SendInvoice() {
 
     let branchID  = BRANCHES[document.getElementById("dd_branch").value][0];
@@ -264,11 +278,10 @@ function SendInvoice() {
 
 
 
-// REQUEST invoices from MyDATA (with mark > 0, ie. all)
-// and calls: SearchInvoices() + AdjustForBranch()
+// REQUEST invoices from MyDATA and call SearchInvoices() + AdjustForBranch()
 function RequestTransmittedDocs() {
 
-    let params = {"mark": "0"};
+    let params = {"mark": MARK_MIN};
       
     $.ajax({
         url: url + "/RequestTransmittedDocs?" + $.param(params),
@@ -311,7 +324,7 @@ function RequestTransmittedDocs() {
 
 
 
-// Searches based on range and populates invoice DD
+// SEARCH based on AA-range and populates invoice DropDown
 function SearchInvoices() {
 
     // empties the DD and adds HEAD
@@ -363,6 +376,7 @@ function SearchInvoices() {
 
 
 
+// CANCEL invoice based on MARK
 function Cancel() {
 
     // Get and check mark
@@ -391,7 +405,7 @@ function Cancel() {
         if (typeof xmlDoc.getElementsByTagName("cancellationMark") != "undefined") {
             alert("Cancel successful!");
             document.getElementById("mark").value =  "";
-            // TODO: instead, remove line from INVOICES and populate DD
+            // TODO: instead, remove one line from INVOICES and populate DD
             RequestTransmittedDocs();
         } else {
             alert("Error: " + xmlDoc.getElementsByTagName("message")[0].textContent);
@@ -403,9 +417,8 @@ function Cancel() {
 };
     
 
-
-// Print online = an already valid APY, retreived from INVOICES
-// Print offline = a virtual APY, retreived from GUI entries
+// PRINT online -> an already valid APY, retreived from INVOICES
+// PRINT offline -> a nonexistend APY, retreived from GUI entries
 function PrintInvoice(mode) {
 
     if (mode === 'online') {
@@ -546,9 +559,9 @@ function PrintInvoice(mode) {
             <table>
               <tr class="heading">
                 <td>
-                  ΙΑΤΡΟΣ ΙΑΤΡΙΔΗΣ<br />
-                  Ιατρικές Υπηρεσίες<br />
-                  ΑΦΜ: ΧΧΧ, ΔΟΥ: ΥΥΥ
+                  ΕΥΑΓΓΕΛΟΣ Δ. ΤΣΟΥΚΑΣ<br />
+                  Ιατρικές Υπηρεσίες Νευρολογίας<br />
+                  ΑΦΜ: 062725970, ΔΟΥ: ΦΛΩΡΙΝΑΣ
                 </td>
                 <td>
                   Απόδειξη Λιανικών Συναλλαγών (ΑΠΥ)<br />
@@ -579,7 +592,7 @@ function PrintInvoice(mode) {
 
         <tr class="heading">
           <td>Υπηρεσία</td>
-          <td>Αξία (Ευρώ)</td>
+          <td>Αξία σε Ευρώ [Εξόφληση]</td>
         </tr>
         <tr class="item">
           <td>${patient_info[2]}<br />
@@ -628,7 +641,7 @@ function setRange() {
 };
 
 
-// Find and set max aa for specified branch
+// Find and set max AA for specified branch
 function AdjustForBranch() {
 
     let max_aa = 0;
