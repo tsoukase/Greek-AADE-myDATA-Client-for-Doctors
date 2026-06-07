@@ -43,7 +43,7 @@ import qrcode
 # External variables
 TITLE	= "ΕΦΑΡΜΟΓΗ MYDATA-AADE ΓΙΑ ΙΑΤΡΟΥΣ"
 USER	= 'tsoukase'
-AFM		= '062725970'
+AFM		= ''
 DEFAULT_AMOUNT 		= '10.00'
 DEFAULT_SERVICE 	= 'ΣΥΝΤΑΓΟΓΡΑΦΗΣΗ'
 
