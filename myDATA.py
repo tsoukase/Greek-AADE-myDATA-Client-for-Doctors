@@ -1,82 +1,85 @@
 #!/usr/bin/env python
 
 """
-
 ==================================================
-* Εφαρμογή για αποστολή ιατρικών ΑΠΥ στο MYDATA
-* Application for sending medical invoices to MYDATA
+* Εφαρμογή για αποστολή απλών ιατρικών ΑΠΥ στο MYDATA
+* Application for sending simple medical invoices to MYDATA
 ==================================================
 
 * Licence:      GPLv3
+* Copywrite: 	2026
 * Written by:   Dr. Evangelos D. Tsoukas
-* Last updated: 2022.06
 
-Supports:
+Υποστηρίζει:
 1) αποστολή ΑΠΥ στο MyDATA
-2) εισαγωγή ΑΠΥ από αρχείο ή, αν δεν υπάρχει αρχείο,
-   κατέβασμα όλων των ΑΠΥ από MyDATA και αποθήκευση σε αρχείο
-3) φιλτράρισμα ΑΠΥ με βάση ΑΑ, ημερoμηνία, όνομα/αιτία
-4) ακύρωση ΑΠΥ βάση ΜΑΡΚ
-5) εκτύπωση ΑΠΥ βάση ΜΑΡΚ ή βάση των entries ('offline') 
+2) εισαγωγή ΑΠΥ είτε από αρχείο (αν είναι πρόσφατο) ή κατέβασμα από MyDATA (από περασμένο μήνα μέχρι σήμερα)
+3) φιλτράρισμα ΑΠΥ με βάση ΑΑ, ημερoμηνία, όνομα/υπηρεσία
+4) ακύρωση ΑΠΥ βάσει ΜΑΡΚ
+5) εκτύπωση ΑΠΥ βάσει ΜΑΡΚ (online-με QR-code) ή βάσει των fields (offline-χωρίς QR-code)
+6) οι ακυρωμένες ΑΠΥ μπορούν να ληφθούν με αλλαγή της μεθόδου DownloadInvoices (if hasattr(invoice.find('%scancelledByMark' ...)
+7) τo WindowsOS ΔΕΝ υποστηρίζεται! (F-U Bill)
+Πεδία ΑΠΥ: ΥΠΟΚ; ΑΑ; ΗΜ/ΝΙΑ (yy-mm-dd); ΠΟΣΟ (Ε); ΠΛΗΡ (τρόπος); ΣΧΟΛΙΟ (Όνομα-Διεύθυνση-Υπηρεσία); ΜΑΡΚ; qrCodeUrl
 
-Pitfalls:
-1) Οι ακυρωμένες ΑΠΥ αγνοούνται, οπότε κατά την συμπλήρωση ΑΑ
-προσοχή στην ύπαρξη ίδιου ΑΑ ακυρωμένης ΑΠΥ
-Για να κατέβουν οι ακυρωμένες, τροποποίησε την SyncAndExportInvoices
-2) Σε περιβάλλον Windows:
- - compatible Python version = 3.4.3
- - only Print offline works!
-3) Sometimes the invoice file gets corrupted and program craches, eg.
- - a line is split in two
- - empty lines are added after cancelling an invoice
-Then you must either correct or remove it and rerun the program
+SOS: SET Testing/Production operation
 
-Invoice columns (7): ΥΠΟΚ; ΑΑ; ΗΜ/ΝΙΑ; ΠΟΣΟ; ΠΛΗΡ; ΣΧΟΛΙΟ; ΜΑΡΚ
-Comment format: Όνομα-Διεύθυνση-Αιτία επίσκεψης
-
-Hardcoded User Info (CHECK BEFORE USE!!):
-1) Testing/Production operation 
-2) Minimum MARK number to download
-3) Username and Keys
-3) Branches (as shown in Taxis)
-4) Paymethods
+TODOs
+1) αντικατάσταση της .findall με .find όταν υπάρχει μόνο μία τιμή στο xml
+2) το αρχείο των Invoices γίνεται corrupt και επιστρέφει fatal error όταν μια γραμμή χωρίζεται σε δύο ή ανάμεσα υπάρχουν κενές γραμμές
 
 """
 
-import os
-from datetime import datetime
+import os.path
+from datetime import datetime, timedelta
 import xml.etree.ElementTree as ET
 import tkinter as tk
 import http.client, urllib.request, urllib.parse, urllib.error, base64
 import webbrowser
-
+import qrcode
 
 ########################
-# Globals
+# Hardcoded Globals
 ########################
 
+# External variables
+TITLE	= "ΕΦΑΡΜΟΓΗ MYDATA-AADE ΓΙΑ ΙΑΤΡΟΥΣ"
+USER	= 'tsoukase'
+AFM		= '062725970'
+DEFAULT_AMOUNT 		= '10.00'
+DEFAULT_SERVICE 	= 'ΣΥΝΤΑΓΟΓΡΑΦΗΣΗ'
 
-# ATTENTION!!
-isTesting = 0
+# Internal variables
+NS 			= '{http://www.aade.gr/myDATA/invoice/v1.0}' # MyDATA XML namespace
+INVOICE_HEADER = 'ΥΠΟΚ; ΑΑ; ΗΜ/ΝΙΑ; ΠΟΣΟ; ΠΛΗΡ; ΟΝ/ΜΟ-ΑΙΤΙΑ; ΜΑΡΚ; QRURL'
+D 			= ';' # field delimiter
+APY_FILE	= os.path.abspath('.Zapy2print.html')
+QR_FILE		= os.path.abspath('.Zqrcode.png')
 
-# MYDATA credentials
-USER = 'MYUSERNAME'
+isProduction = 1	# 0 = TESTING
 
-if isTesting:
-  MARK_MIN = 0
-  KEY      = 'MYKEY-testing'
-  BASE_URL = 'mydata-dev.azure-api.net'
-  BASE_EXT = ''
-  INVOICE_FILE = 'Zinvoices_test.csv'
+if isProduction:
 
-else:
+  KEY      		= '' # FIRST KEY
+  BASE_URL 		= 'mydatapi.aade.gr'
+  BASE_EXT 		= '/myDATA'
+  INVOICE_FILE 	= 'Zinvoices.csv'
+  DISCARD_FILE_AFTER = 21600 # secs after which the invoice file is discarded and a fresh download follows (CURR: 6 hours)
+  # Date Range: current day < 15th -> includes whole previous month, > 15th -> only current month
+  firstOfCurrMonth = datetime.today().replace(day=1)
+  if datetime.today().day > 15:
+    daysBefore = 2
+  else:
+    daysBefore = 32
+  DATEFROM 		= (firstOfCurrMonth - timedelta(days = daysBefore)).strftime('%d/%m/%Y')
 
-  # Minimum Mark for invoices to Sync
-  MARK_MIN = 0 # change as needed
-  KEY      = 'MYKEY-production'
-  BASE_URL = 'mydatapi.aade.gr'
-  BASE_EXT = '/myDATA'
-  INVOICE_FILE = 'Zinvoices_prod.csv'
+else: # TESTING
+
+  TITLE 		= TITLE + "- TESTING"
+  KEY      		= ''
+  BASE_URL 		= 'mydataapidev.aade.gr'
+  BASE_EXT 		= ''
+  INVOICE_FILE 	= 'Zinvoices_test.csv'
+  DISCARD_FILE_AFTER = 0
+  DATEFROM 		= "07/07/2019" # Πρώτη κυβέρνηση του Γκαντέμη
 
 headers = {
            'aade-user-id': USER,
@@ -85,41 +88,35 @@ headers = {
 
 # Υποκαταστήματα (κωδικός από TAXIS)
 BRANCHES = {
-    'CITY1':
-        ['1', 'ADDRESS1, TK1, CITY1<br />τηλ LAND, MOBILE'],
-    'CITY2':
-        ['2', 'ADDRESS2, TK2, CITY2<br />τηλ LAND, MOBILE']
+    'ΦΛΩΡΙΝΑ':
+        ['1', 'Σαρανταπόρου 28, 53100, Φλώρινα<br />τηλ 2385023513, 6972422931'],
+    'ΑΜΥΝΤΑΙΟ':
+        ['2', 'Ανδρέα Παπανδρέου 171, 53200, Αμύνταιο<br />τηλ 2386024440, 6972422931'],
+    'ΠΤΟΛΕΜΑΙΔΑ':
+        ['3', 'Βασιλέως Κωνσταντίνου 15, 50200, Πτολεμαϊδα<br />τηλ 2463082307, 6972422931']
     }
 
 # Τρόποι πληρωμής
 PAYMETHODS = {
     'Μετρητά': '3',
-    'POS': '1'
+    'POS': '7',
+    'eBanking': '6',
+    'IRIS': '8'
     }
-
-# Default service values
-DEFAULT_AMOUNT = '10.00'
-DEFAULT_SERVICE = 'ΣΥΝΤΑΓΟΓΡΑΦΗΣΗ'
-
-# Internal globals
-D =             ';' # line delimiter
-INVOICE_HEAD = 'ΥΠΟΚ; ΑΑ; ΗΜ/ΝΙΑ; ΠΟΣΟ; ΠΛΗΡ; ΟΝ/ΜΟ-ΑΙΤΙΑ; ΜΑΡΚ'
-INVOICES =      []
-DISCARD_FILE_AFTER = 21600 # secs after which the file is deleted and a new Sync follows (CURR = 6 hours)
-
-# MyDATA XML namespace
-NS = '{http://www.aade.gr/myDATA/invoice/v1.0}'
-
 
 ##################
 # MAIN METHODS
 ##################
 
-def SyncAndExportInvoices():
-  ''' SyncAndExportInvoices syncs invoices with MyDATA and exports them to file '''
+def DownloadInvoices():
+  ''' DownloadInvoices downloads invoices from MyDATA and exports them to file'''
 
-  # Get invoices with mark > MARK_MIN
-  params = urllib.parse.urlencode({'mark': MARK_MIN})
+  params = urllib.parse.urlencode({ 'mark': 0,
+                                    'issuervat': AFM, 
+                                    'dateFrom': DATEFROM,
+                                    'dateTo': datetime.today().strftime('%d/%m/%Y')})
+  # 'issuervat' can be substituted by 'entityVatNumber' (not in Testing env)
+  # an invoice type filter can be used, eg: 'invType': '11.2'
   conn = http.client.HTTPSConnection(BASE_URL)
   conn.request("GET", BASE_EXT + "/RequestTransmittedDocs?%s" % params, "", headers)
   response = conn.getresponse().read().decode('utf-8')
@@ -128,14 +125,19 @@ def SyncAndExportInvoices():
     response_root = ET.fromstring(response)
 
     # Save retrieved invoices in global variable and in file
-    global INVOICES
-    INVOICES = []
+    global INVOICES; INVOICES = []
 
     for invoice in response_root.findall('%sinvoicesDoc/%sinvoice' % (NS, NS)):
-
-      # Exclude cancelled invoices
-      # (in order to include only them, remove the 'not' from the next line)
-      if not hasattr(invoice.find('%scancelledByMark' % (NS)), 'text'):
+      # Selection criteria of APYs
+      if (
+           invoice.find('%sissuer' % (NS)) is not None and
+           invoice.find('%sissuer/%svatNumber' % (NS, NS)).text == AFM and
+           invoice.find('%sinvoiceHeader' % (NS)) is not None and
+           invoice.find('%sinvoiceHeader/%sinvoiceType' % (NS, NS)).text == '11.2'
+          ):
+      
+       # Exclude cancelled invoices (to include them, remove the 'not' from next line)
+       if not hasattr(invoice.find('%scancelledByMark' % (NS)), 'text'):
         branch = invoice.find(
             '%sissuer/%sbranch' % (NS, NS)).text
         aa = invoice.find(
@@ -151,6 +153,7 @@ def SyncAndExportInvoices():
         if not (hasattr(comment, 'text') and (comment.text is not None)): # no comment (pun)
           comment.text = ''
         mark = invoice.find('%smark' % (NS)).text
+        qrCodeUrl = invoice.find('%sqrCodeUrl' % (NS)).text
 
         # Build invoice line
         l = D.join((branch
@@ -159,14 +162,15 @@ def SyncAndExportInvoices():
                   , amount
                   , paymethod
                   , comment.text
-                  , mark))
+                  , mark
+                  , qrCodeUrl))
         INVOICES.append(l)
 
     with open(INVOICE_FILE, 'w') as f:
       for l in INVOICES:
         f.write("%s\n" % l.replace('\n', ''))
 
-    result = 'Οι ΑΠΥ φορτώθηκαν από το MyDATA!'
+    result = 'Οι ΑΠΥ φορτώθηκαν από MyDATA, από ' + DATEFROM + ' μέχρι σήμερα'
 
     for r in response_root.iter("message"):
       result = r.text
@@ -179,14 +183,14 @@ def SyncAndExportInvoices():
 
 
 def LoadInvoicesFromFile():
-  ''' LoadInvoicesFromFile loads invoices from existing file '''
+  ''' LoadInvoicesFromFile loads invoices from existing file'''
 
-  global INVOICES
+  global INVOICES; INVOICES = []
   with open(INVOICE_FILE, 'r') as f:
     for l in f:
       INVOICES.append(l)
 
-  ShowNotification('Οι ΑΠΥ φορτώθηκαν από αρχείο. ΜΠΟΡΕΙ ΝΑ ΜΗΝ ΕΙΝΑΙ ΕΝΗΜΕΡΕΣ!', [520, H_BUTT+20])
+  ShowNotification('Οι ΑΠΥ φορτώθηκαν από το ΑΡΧΕΙΟ!', [520, H_BUTT+20])
 
 
 def FilterInvoices():
@@ -196,7 +200,7 @@ def FilterInvoices():
   
   range_until = entry_until.get()
   range_from = entry_from.get()
-  sel = [INVOICE_HEAD]
+  sel = [INVOICE_HEADER]
 
   # ... based on AA
   if filtertermOmVar.get()[0] == '1':
@@ -217,8 +221,10 @@ def FilterInvoices():
       and (range_until in l.split(D)[5].split('-')[1]) ):
         sel.append(l)
 
-  # TODO 1: replace Optionmenu with Combobox (to fit conveniently an arbitrary number of entries)
-  # 2: canvas should be first destroyed, eg with canvas.delete(...), in order not to stack them
+  # remove QR-html
+  sel = [l.split('https', 1)[0] for l in sel]
+
+  # TODO: replace Optionmenu with Combobox (to fit an arbitrary number of rows in a dropdown menu)
   om_invoices = tk.OptionMenu(root, invoiceOmVar, *sel,
     command=lambda _: setMark())
   canvas.create_window(520, H_LOW, window=om_invoices, width = 380)
@@ -314,7 +320,12 @@ def SendInvoice():
   if (response.startswith('<?xml')):
     response_root = ET.fromstring(response)
 
-    # Iterate over all Invoices
+    # Get QR-code URL
+    qrCodeUrl = ''
+    for r in response_root.iter("qrCodeUrl"):    
+      qrCodeUrl = r.text
+
+    # Get Invoice Data
     for r in response_root.iter("invoiceMark"):
       l = D.join((branch
                 , aa
@@ -322,20 +333,24 @@ def SendInvoice():
                 , amount
                 , paymethod
                 , comment
-                , r.text))
+                , r.text
+                , qrCodeUrl))
       INVOICES.append(l)
 
       with open(INVOICE_FILE, 'a') as f:
         f.write("%s\n" % l)
 
-      result = 'Επιτυχής!'
+      result = 'Επιτυχής αποστολή!'
 
       # Reinitialize GUI entries
       entry_aa.delete(0, 'end')
       entry_aa.insert(0, str(int(aa)+1))
       entry_amount.delete(0, 'end')
       entry_amount.insert(0, DEFAULT_AMOUNT)
+      paymethodOmVar.set(list(PAYMETHODS.keys())[0])
       entry_patname.delete(0,'end')
+      entry_pataddr.delete(0, 'end')
+      entry_pataddr.insert(0, branchOmVar.get())
       entry_patvisit.delete(0,'end')
       entry_patvisit.insert(0, DEFAULT_SERVICE)
       entry_mark.delete(0,'end')
@@ -355,14 +370,14 @@ def SendInvoice():
 
 
 def CancelInvoice():
-  ''' CancelInvoice CANCELS an invoice based on MARK (no way to correct an already sent invoice) '''
+  ''' CancelInvoice CANCELS an invoice based on MARK '''
 
   mark = entry_mark.get()
   if (len(mark) != 15):
-    ShowNotification("Μη έγκυρο ΜΑΡΚ", [800, H_UPP+20])
+    ShowNotification("Μη έγκυρο μήκος ΜΑΡΚ (15 ψηφία)", [800, H_UPP+20])
     return
     
-  params = urllib.parse.urlencode({'mark': mark})
+  params = urllib.parse.urlencode({ 'mark': mark })
   conn = http.client.HTTPSConnection(BASE_URL)
   conn.request("POST", BASE_EXT + "/CancelInvoice?%s" % params, "", headers)
   response = conn.getresponse().read().decode('utf-8')
@@ -378,7 +393,7 @@ def CancelInvoice():
         for l in INVOICES:
           f.write("%s\n" % l)
 
-      result = 'Επιτυχής!'
+      result = 'Επιτυχής διαγραφή!'
       entry_mark.delete(0,'end')
       FilterInvoices()
 
@@ -394,34 +409,45 @@ def CancelInvoice():
 
 
 def PrintInvoice(mode):
-  ''' Print online prints an already valid APY, retrieved from MyData based on MARK
-      Print offline prints an imaginary APY, retrieved from GUI entries
+  ''' Print online prints an already valid APY, retrieved from file based on MARK
+      Print offline prints an nonexistend APY, retrieved from GUI entries
   '''
 
   if mode == 'online':
     mark = entry_mark.get()
     if (len(mark) != 15):
-      ShowNotification("Μη έγκυρο ΜΑΡΚ", [800, H_UPP+20])
+      ShowNotification("Μη έγκυρος ΜΑΡΚ", [800, H_UPP+20])
       return
 
     for l in INVOICES:
       if mark in l:
-        invoice_info = l.split(D)
+        row = l.split(D)
         # Note: Branch Code->City conversion works provided the BRANCHES are numbered 1,2... 
-        invoice_info[0] = list(BRANCHES.keys())[int(invoice_info[0])-1]
-        # Note: Code->Method conversion is specific
-        if (invoice_info[4] == '3'): invoice_info[4] = 'Μετρητά'
-        else: invoice_info[4] = 'POS'
-        patient_info = invoice_info[5].split('-')
+        row[0] = list(BRANCHES.keys())[int(row[0])-1]
+        # Note: Payment method string is hardcoded
+        match row[4]:
+          case '3': row[4] = 'Μετρητά'
+          case '7': row[4] = 'POS'
+          case '6': row[4] = 'eBanking'
+          case '8': row[4] = 'IRIS'
+        patient_info = row[5].split('-')
+        # if QRcode-URL exists, add the image to html, else add empty space
+        if len(row[7]) > 1:
+          qrCodeHTML = """<td> <img src="%s" width="80" height="80"> </td>"""
+          img = qrcode.make(row[7])
+          img.save(QR_FILE)
+        else:
+          qrCodeHTML = """<!--%s--!>"""
 
-    if not ('invoice_info' in locals()):
+    if not ('row' in locals()):
       ShowNotification("Ο ΜΑΡΚ δεν βρέθηκε", [800, H_UPP+20])
       return
       
     entry_mark.delete(0, 'end')
 
   else: # 'offline':
-    invoice_info = [branchOmVar.get()
+    mark = ''
+    row = [branchOmVar.get()
                   , entry_aa.get()
                   , entry_date.get()
                   , entry_amount.get()
@@ -429,6 +455,7 @@ def PrintInvoice(mode):
     patient_info = [entry_patname.get()
                   , entry_pataddr.get()
                   , entry_patvisit.get()]
+    qrCodeHTML = """<!--%s--!>"""
 
   # Empty Name and Address entries
   if len(patient_info) == 2:
@@ -437,8 +464,8 @@ def PrintInvoice(mode):
   if patient_info[2] == '':
     patient_info[2] = DEFAULT_SERVICE
 
-  # Default template to show
-  apy_html = """
+  # HTML-CSS template to show
+  apy_html1 = """
 <!DOCTYPE html>
 <html>
   <head>
@@ -457,7 +484,7 @@ def PrintInvoice(mode):
         color: #555;
       }
       .invoice-box table {
-        width: 100%%;
+        width: 100%;
         line-height: inherit;
         text-align: left;
       }
@@ -499,12 +526,12 @@ def PrintInvoice(mode):
       }
       @media only screen and (max-width: 600px) {
         .invoice-box table tr.top table td {
-          width: 100%%;
+          width: 100%;
           display: block;
           text-align: center;
         }
         .invoice-box table tr.information table td {
-          width: 100%%;
+          width: 100%;
           display: block;
           text-align: center;
         }
@@ -522,7 +549,8 @@ def PrintInvoice(mode):
       }
     </style>
   </head>
-
+  """
+  apy_html2 = """
   <body>
     <div class="invoice-box">
       <table cellpadding="0" cellspacing="0">
@@ -531,15 +559,16 @@ def PrintInvoice(mode):
             <table>
               <tr class="heading">
                 <td>
+                  Απόδειξη Παροχής Υπηρεσιών<br />
+                  Αριθμός: %s<br />
+                  Ημερομηνία: %s
+                </td>
+                <td>
                   ΕΥΑΓΓΕΛΟΣ Δ. ΤΣΟΥΚΑΣ<br />
                   Ιατρικές Υπηρεσίες Νευρολογίας<br />
                   ΑΦΜ: 062725970, ΔΟΥ: ΦΛΩΡΙΝΑΣ
                 </td>
-                <td>
-                  Απόδειξη Λιανικών Συναλλαγών<br />
-                  Αριθμός: %s<br />
-                  Ημερομηνία: %s
-                </td>
+                {qrCodeHTML}
               </tr>
             </table>
           </td>
@@ -549,7 +578,7 @@ def PrintInvoice(mode):
             <table>
               <tr>
                 <td>
-                  Διεύθυνση:<br />
+                  Διεύθυνση Έδρας:<br />
                   %s
                 </td>
                 <td>
@@ -568,38 +597,47 @@ def PrintInvoice(mode):
         </tr>
         <tr class="item">
           <td>%s<br />
-              (χωρίς ΦΠΑ, άρθρο 22 Κώδικα)
+              (χωρίς ΦΠΑ, άρθρο 27 Κώδικα)
           </td>
           <td>%s [%s]
           </td>
         </tr>
         <tr class="heading">
-          <td></td>
+          <td><p style="font-size: 10px">%s</p></td>
           <td>ΠΑΡΑΛΑΒΗ &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; ΕΚΔΟΣΗ &emsp;&emsp;&emsp;&emsp;&emsp;</td>
         </tr>
       </table>
     </div>
   </body>
 </html>
-  """ % (invoice_info[1]
-       , invoice_info[2]    
-       , BRANCHES[invoice_info[0]][1]
+  """.format(qrCodeHTML=qrCodeHTML) % (
+         row[1]
+       , row[2]
+       , QR_FILE    
+       , BRANCHES[row[0]][1]
        , patient_info[0]
        , patient_info[1]
        , patient_info[2]
-       , invoice_info[3]
-       , invoice_info[4])
+       , row[3]
+       , row[4]
+       , mark)
 
-  file_html = os.path.abspath('Zapy2print.html')
-  with open(file_html, 'w', encoding='utf-8') as f:  # enc... fixes Windows charmap bug 
-    f.write(apy_html)
-    webbrowser.open('file://' + file_html)
+  with open(APY_FILE, 'w', encoding='utf-8') as f: 
+    f.write(apy_html1 + apy_html2)
+    webbrowser.open('file://' + APY_FILE)
 
 
 
 ##################
 # HELPER METHODS
 ##################
+
+def ShowNotification(content, place):
+  ''' ShowNotification shows a temporary notification '''
+
+  label_result = tk.Label(root, text=content, font=(SMALL_FONT))
+  label_result.after(NOTIF_DUR, lambda: label_result.destroy())
+  canvas.create_window(place[0], place[1], window=label_result)
 
 
 def setRange():
@@ -633,8 +671,8 @@ def setRange():
     pass
 
 
-def AdjustMenuForSelectedBranch():
-  ''' AdjustMenuForSelectedBranch increments AA and updates the city based on the selected Branch '''
+def SetAAandCityBasedOnBranch():
+  ''' SetAAandCityBasedOnBranch inserts the next AA and the city in Address entry when a Branch is selected '''
 
   max_aa = 0
   for l in INVOICES:
@@ -649,18 +687,11 @@ def AdjustMenuForSelectedBranch():
 
 
 def setMark():
-  ''' setMark adds mark to mark entry for the selected invoice '''
+  ''' setMark is a lambda and adds MARK to entry when an invoice is selected from drop-down menu'''
 
   entry_mark.delete(0,'end')
   entry_mark.insert(0, invoiceOmVar.get().split(D)[6].strip())
 
-
-def ShowNotification(content, place):
-  ''' ShowNotification shows a temporary notification '''
-
-  label_result = tk.Label(root, text=content, font=(SMALL_FONT))
-  label_result.after(NOTIF_DUR, lambda: label_result.destroy())
-  canvas.create_window(place[0], place[1], window=label_result)
 
 
 
@@ -681,8 +712,7 @@ H_LOW = 160
 H_BUTT = 230 # no pun intented with 'tit' and 'butt'
 
 root = tk.Tk()
-root.title("ΕΦΑΡΜΟΓΗ MYDATA ΓΙΑ ΙΑΤΡΟΥΣ - TESTING" if isTesting == 1
-            else "ΕΦΑΡΜΟΓΗ MYDATA ΓΙΑ ΙΑΤΡΟΥΣ - PRODUCTION") 
+root.title(TITLE)
 canvas = tk.Canvas(root, bg=DEF_COLOUR, width = 900, height = 300)
 canvas.pack()
 root.resizable(False, False)
@@ -695,13 +725,13 @@ root.option_add("*font", MID_FONT)
 
 canvas.create_window(100, H_TIT, window=tk.Label(root,
     text="Αποστολή ΑΠΥ", bg=DEF_COLOUR, font=BIG_FONT))
-    
+
 # branches
 branchOmVar = tk.StringVar()
 branchOmVar.set(list(BRANCHES.keys())[0])
 om_branch = tk.OptionMenu(root
   , branchOmVar, *list(BRANCHES.keys())
-  , command=lambda _: AdjustMenuForSelectedBranch())
+  , command=lambda _: SetAAandCityBasedOnBranch())
 canvas.create_window(240, H_TIT, window=om_branch, width = 120)
 
 # AA
@@ -781,7 +811,7 @@ canvas.create_window(580, H_MID, window=entry_until, width = 90)
 
 # invoices (the rest is implemented in FilterInvoices)
 invoiceOmVar = tk.StringVar()
-invoiceOmVar.set(INVOICE_HEAD)
+invoiceOmVar.set(INVOICE_HEADER)
 om_invoices = tk.OptionMenu(root, invoiceOmVar, [])
   
 # Filter button
@@ -830,23 +860,15 @@ entry_amount.insert(0, DEFAULT_AMOUNT)
 entry_pataddr.insert(0, branchOmVar.get())
 entry_patvisit.insert(0, DEFAULT_SERVICE)
 
-if os.name != 'nt': # well, not Windows ...
-
-  if os.path.isfile(INVOICE_FILE):
-    last_modif = datetime.now().timestamp() - os.path.getmtime(INVOICE_FILE) 
-
-    if last_modif < DISCARD_FILE_AFTER:
-      LoadInvoicesFromFile()
-
-    else:
-      os.rename(INVOICE_FILE, INVOICE_FILE+'_prev')
-      SyncAndExportInvoices()
+if (not os.path.isfile(INVOICE_FILE) or
+    datetime.now().timestamp() - os.path.getmtime(INVOICE_FILE) > DISCARD_FILE_AFTER):
+  DownloadInvoices()
  
-  else:
-    SyncAndExportInvoices()
+else:
+  LoadInvoicesFromFile()
 
-  AdjustMenuForSelectedBranch()
-  FilterInvoices()
+SetAAandCityBasedOnBranch()
+FilterInvoices()
 
 # BAM!!!
 root.mainloop()
