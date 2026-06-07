@@ -6,15 +6,15 @@
 
 1) suitable only for Doctors/Physicians that operate in Greece (Invoice type: category1_3-E3_561_003)
 
-2) use of myDATA REST API (current v1.0.10) as published [here](https://www.aade.gr/en/mydata/technical-specifications-versions-mydata)
+2) use of myDATA REST API as published [here](https://www.aade.gr/en/mydata/technical-specifications-versions-mydata)
   
-3) works either in testing or production mode (needs editing the file)
+3) works in production or testing mode (needs editing the file)
 
-4) Supports: sending, retrieval based on filters, canceling and printing of Invoices
+4) supports: sending, retrieval, canceling, printing and filtering of Invoices
 
-5) QR-image is shown on Invoice (MyDATA generates QR-code only once, at invoice send, and not at retrival)   
+5) QR-image is shown on Invoice   
 
-6) Only Linux is supported (HELP to extend to Windows welcome)
+6) Only Linux is supported
 
 ### BEFORE running, edit/set variables in file myDATA.py: 
 - 'isTesting' = 0 (testing) | 1 (production)
