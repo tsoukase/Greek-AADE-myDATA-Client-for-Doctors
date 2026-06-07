@@ -6,8 +6,8 @@
 * Application for sending simple medical invoices to MYDATA
 ==================================================
 
-* Licence:      GPLv3
-* Copywrite: 	2026
+* Licence:      MIT
+* Copywrite: 	  2026
 * Written by:   Dr. Evangelos D. Tsoukas
 
 Υποστηρίζει:
